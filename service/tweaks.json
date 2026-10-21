@@ -14,6 +14,7 @@
         "recheckIntervalMs": 30000,
         "downAfterFailures": 3,
         "idleTorrentMinutes": 20,
+        "warmIdleMinutes": 3,
         "keepTorrentFolders": 30,
         "useLan": true,
         "discover": {

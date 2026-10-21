@@ -611,6 +611,7 @@ function touchTorrent(hash, server, res) {
     var entry = touched[key] = touched[key] || { hash: hash, server: server, open: 0 };
     entry.at = Date.now();
     if (!res) return;
+    entry.played = true;
     entry.open++;
     var released = false;
     var release = function() {
@@ -650,10 +651,13 @@ function serveForget(reqUrl, res) {
 
 function removeIdleTorrents() {
     // A torrent nobody read for a while keeps dialing peers forever; through a carrier NAT that starves every new connection of the home
-    var limit = (tweaks.servers.idleTorrentMinutes || 0) * 60000;
-    if (!limit) return;
+    var played = (tweaks.servers.idleTorrentMinutes || 0) * 60000;
+    // A torrent only warmed in the background (source test, race, mirror) was never watched, so it goes much sooner
+    var warmed = (tweaks.servers.warmIdleMinutes || 0) * 60000;
+    if (!played) return;
     Object.keys(touched).forEach(function(key) {
         var entry = touched[key];
+        var limit = entry.played || !warmed ? played : warmed;
         if (entry.open > 0 || Date.now() - entry.at < limit) return;
         removeTorrent(entry);
         console.log('removed idle torrent', entry.hash, 'on', entry.server.host);
@@ -673,7 +677,8 @@ function proxyToStreaming(req, res) {
     // Torrent files go through the RAM read-ahead window, everything else is proxied as is
     var source = sourceFor(req.url);
     var hashMatch = INFO_HASH.exec(req.url);
-    if (hashMatch && STREAM_PATH.test(req.url)) touchTorrent(hashMatch[1].toLowerCase(), source, res);
+    // Only reads of the file itself count as watching; stats and track lists just keep the torrent from the idle cleanup
+    if (hashMatch && STREAM_PATH.test(req.url)) touchTorrent(hashMatch[1].toLowerCase(), source, TORRENT_FILE_PATH.test(req.url) ? res : null);
     if (TORRENT_FILE_PATH.test(req.url)) {
         trackStream(res);
         // The first request of a torrent on a server creates it there with the configured peer sources
