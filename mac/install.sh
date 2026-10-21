@@ -4,18 +4,20 @@
 # official server.js patched to listen on STREMIO_PORT, Homebrew ffmpeg for HLS,
 # disk cache, the "Fast" torrent profile, kept alive by launchd and caffeinate.
 # Also installs the subtitle sync service (ffsubsync in its own Python venv, on
-# SUBSYNC_PORT) and the daily Dev Mode keepalive. Safe to run again: an agent is
+# SUBSYNC_PORT), the LAN discovery responder that lets the TV find this computer on any
+# network (UDP DISCOVERY_PORT) and the daily Dev Mode keepalive. Safe to run again: an agent is
 # restarted only when its files changed or it is not loaded, so a video being
 # served is not interrupted.
 #
 # Requires: Homebrew node@22 and ffmpeg, curl, python3.
-# Usage: ./mac/install.sh   (env: SERVER_VERSION, STREMIO_PORT, SUBSYNC_PORT, CACHE_BYTES)
+# Usage: ./mac/install.sh   (env: SERVER_VERSION, STREMIO_PORT, SUBSYNC_PORT, DISCOVERY_PORT, CACHE_BYTES)
 #
 set -euo pipefail
 
 SERVER_VERSION="${SERVER_VERSION:-4.20.17}"
 STREMIO_PORT="${STREMIO_PORT:-11480}"
 SUBSYNC_PORT="${SUBSYNC_PORT:-11481}"
+DISCOVERY_PORT="${DISCOVERY_PORT:-11479}"
 CACHE_BYTES="${CACHE_BYTES:-10737418240}"
 NODE_BIN="${NODE_BIN:-/opt/homebrew/opt/node@22/bin/node}"
 FFMPEG_DIR="${FFMPEG_DIR:-/opt/homebrew/bin}"
@@ -25,6 +27,7 @@ AGENTS="$HOME/Library/LaunchAgents"
 SERVER_LABEL="com.joaovargass.stremio-lan-server"
 KEEPALIVE_LABEL="com.joaovargass.webos-devmode-keepalive"
 SUBSYNC_LABEL="com.joaovargass.stremio-subsync"
+DISCOVERY_LABEL="com.joaovargass.stremio-discovery"
 VENV="$HOME/.local/share/stremio-subsync/venv"
 
 for bin in "$NODE_BIN" "$FFMPEG_DIR/ffmpeg" "$FFMPEG_DIR/ffprobe"; do
@@ -50,6 +53,7 @@ curl -fsSL -o "$STAGE/server.js" "https://dl.strem.io/server/v$SERVER_VERSION/de
 python3 "$HERE/patch-server.py" "$STAGE/server.js"
 SERVER_CHANGED=$(install_file "$STAGE/server.js" "$DEST/server.js")
 SUBSYNC_CHANGED=$(install_file "$HERE/subsync.js" "$DEST/subsync.js")
+DISCOVERY_CHANGED=$(install_file "$HERE/discovery.js" "$DEST/discovery.js")
 install_file "$HERE/devmode-keepalive.sh" "$DEST/devmode-keepalive.sh" >/dev/null
 
 echo "==> Installing ffsubsync into $VENV"
@@ -111,6 +115,29 @@ cat > "$STAGE/$SUBSYNC_LABEL.plist" <<EOF
 </dict>
 </plist>
 EOF
+cat > "$STAGE/$DISCOVERY_LABEL.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>$DISCOVERY_LABEL</string>
+    <key>ProgramArguments</key>
+    <array><string>$NODE_BIN</string><string>$DEST/discovery.js</string></array>
+    <key>WorkingDirectory</key><string>$DEST</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>DISCOVERY_PORT</key><string>$DISCOVERY_PORT</string>
+        <key>STREMIO_PORT</key><string>$STREMIO_PORT</string>
+        <key>SUBSYNC_PORT</key><string>$SUBSYNC_PORT</string>
+    </dict>
+    <key>RunAtLoad</key><true/>
+    <key>KeepAlive</key><true/>
+    <key>ProcessType</key><string>Background</string>
+    <key>StandardOutPath</key><string>$DEST/discovery.log</string>
+    <key>StandardErrorPath</key><string>$DEST/discovery.log</string>
+</dict>
+</plist>
+EOF
 cat > "$STAGE/$KEEPALIVE_LABEL.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -128,10 +155,11 @@ EOF
 
 echo "==> (Re)loading agents whose files changed"
 SERVER_RESTARTED=0
-for label in "$SERVER_LABEL" "$SUBSYNC_LABEL" "$KEEPALIVE_LABEL"; do
+for label in "$SERVER_LABEL" "$SUBSYNC_LABEL" "$DISCOVERY_LABEL" "$KEEPALIVE_LABEL"; do
     changed=$(install_file "$STAGE/$label.plist" "$AGENTS/$label.plist")
     [ "$label" = "$SERVER_LABEL" ] && [ "$SERVER_CHANGED" = 1 ] && changed=1
     [ "$label" = "$SUBSYNC_LABEL" ] && [ "$SUBSYNC_CHANGED" = 1 ] && changed=1
+    [ "$label" = "$DISCOVERY_LABEL" ] && [ "$DISCOVERY_CHANGED" = 1 ] && changed=1
     if [ "$changed" = 0 ] && launchctl print "gui/$(id -u)/$label" >/dev/null 2>&1; then
         echo "    $label unchanged, kept running"
         continue
