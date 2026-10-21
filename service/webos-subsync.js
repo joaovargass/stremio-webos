@@ -7,6 +7,7 @@
 (function () {
     var config = (window.STREMIO_TWEAKS || {}).subtitles || {};
     var done = {};
+    var retried = {};
     var lastApplied = null;
     var playingSince = null;
     var busy = false;
@@ -73,7 +74,10 @@
         if (done[key]) return;
         done[key] = true;
         busy = true;
-        var query = 'media=' + encodeURIComponent(video.currentSrc) + '&sub=' + encodeURIComponent(track.url) + '&at=' + Math.floor(video.currentTime);
+        // The sync reads the audio from the original torrent file, even while the TV plays an HLS conversion of it
+        var torrent = window.__stremioDoctor.sourceTorrent(video.currentSrc);
+        var media = torrent ? torrent[0] : video.currentSrc;
+        var query = 'media=' + encodeURIComponent(media) + '&sub=' + encodeURIComponent(track.url) + '&at=' + Math.floor(video.currentTime);
         fetch('/__tweaks/subsync?' + query).then(function (resp) {
             // No sync server (503) and a sync server that does not answer (502) both mean the Mac service is missing
             if (resp.status === 502 || resp.status === 503) return { status: 503, body: null };
@@ -86,7 +90,14 @@
                 warnedUnavailable = true;
                 return;
             }
-            if (r.status !== 200) return console.warn('[subsync] failed', r.status, JSON.stringify(r.body));
+            if (r.status !== 200) {
+                // A busy server can fail once; this slot gets one more try a minute later
+                if (!retried[key]) {
+                    retried[key] = true;
+                    setTimeout(function () { delete done[key]; }, 60000);
+                }
+                return console.warn('[subsync] failed', r.status, JSON.stringify(r.body));
+            }
             apply(r.body, track);
         }).catch(function (err) {
             busy = false;
