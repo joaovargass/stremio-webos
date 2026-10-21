@@ -74,13 +74,22 @@ ReadAhead.prototype.reset = function() {
     this.buffer = null;
 };
 
+ReadAhead.prototype.reroute = function(hash, upstream) {
+    // Move the open window of one torrent to another server without the player noticing; false when there is none
+    var b = this.buffer;
+    if (!b || b.done || b.failed || b.path.toLowerCase().indexOf(hash) === -1) return false;
+    b.switchSource(upstream);
+    return true;
+};
+
 ReadAhead.prototype.handle = function(req, res, upstream, passthrough) {
     // Serve a stream request from the window, or decide to pass it through
     var range = parseRange(req.headers.range);
     if (!this.config.enabled || req.method !== 'GET' || !range) return passthrough();
     var b = this.buffer;
     var near = b && b.path === req.url && range.start >= b.start && range.start <= b.end + this.config.joinGapMb * MB;
-    if (b && b.path === req.url && !near && b.readers.length > 0) return passthrough();
+    // A window someone is reading stays put: far reads of the same file and reads of other files go straight through
+    if (b && !near && b.readers.length > 0) return passthrough();
     if (!near) {
         if (b) b.destroy();
         b = this.buffer = new Window(this, req, upstream, range.start);
@@ -103,31 +112,47 @@ function Window(owner, req, upstream, start) {
     this.done = false;
     this.paused = false;
     this.idleTimer = null;
-    this.open(req, upstream);
+    this.requestHeaders = req.headers;
+    this.generation = 0;
+    this.open(upstream, start);
 }
 
 Window.prototype = Object.create(EventEmitter.prototype);
 
-Window.prototype.open = function(req, upstream) {
-    // Start the single sequential upstream read for this window
+Window.prototype.open = function(upstream, from) {
+    // Start the single sequential upstream read for this window; events of a replaced read are ignored
     var self = this;
-    var headers = Object.assign({}, req.headers, { range: 'bytes=' + this.start + '-' });
+    var gen = ++this.generation;
+    var current = function() { return gen === self.generation; };
+    var headers = Object.assign({}, this.requestHeaders, { range: 'bytes=' + from + '-' });
     this.upstreamReq = http.request({ hostname: upstream.hostname, port: upstream.port, path: this.path, method: 'GET', headers: headers }, function(res) {
+        if (!current()) return res.resume();
         var contentRange = /\/(\d+)$/.exec(res.headers['content-range'] || '');
         if (res.statusCode !== 206 || !contentRange) {
             res.resume();
             return self.fail();
         }
-        self.total = parseInt(contentRange[1], 10);
-        self.headers = res.headers;
+        // The first answer fixes the size and headers the player sees; a later server only continues the bytes
+        if (self.total === null) {
+            self.total = parseInt(contentRange[1], 10);
+            self.headers = res.headers;
+        }
         self.upstreamRes = res;
-        res.on('data', function(chunk) { self.push(chunk); });
-        res.on('end', function() { self.done = true; self.emit('data'); });
-        res.on('error', function() { self.fail(); });
+        res.on('data', function(chunk) { if (current()) self.push(chunk); });
+        res.on('end', function() { if (current()) { self.done = true; self.emit('data'); } });
+        res.on('error', function() { if (current()) self.fail(); });
         self.emit('headers');
     });
-    this.upstreamReq.on('error', function() { self.fail(); });
+    this.upstreamReq.on('error', function() { if (current()) self.fail(); });
     this.upstreamReq.end();
+};
+
+Window.prototype.switchSource = function(upstream) {
+    // The same torrent file has identical bytes on every server: continue right after the last byte held
+    var previous = this.upstreamReq;
+    this.paused = false;
+    this.open(upstream, this.end);
+    if (previous) previous.destroy();
 };
 
 Window.prototype.fail = function() {

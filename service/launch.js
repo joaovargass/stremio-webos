@@ -116,15 +116,17 @@ function serveRoute(reqUrl, res) {
     var query = url.parse(reqUrl, true).query;
     var hash = String(query.hash || '').toLowerCase();
     var target = query.to === 'remote' ? remoteFallback() : null;
+    var seamless = false;
     if (/^[0-9a-f]{40}$/.test(hash)) {
         if (target) routes[hash] = target;
         else delete routes[hash];
-        // The memory window was filled from the previous server and must not be mixed with the new one
-        readAhead.reset();
-        console.log('route', hash, '->', target || 'default');
+        // The open memory window continues from the new server at the next byte, so the player keeps playing untouched
+        seamless = readAhead.reroute(hash, target ? url.parse(target) : upstream);
+        if (!seamless) readAhead.reset();
+        console.log('route', hash, '->', target || 'default', seamless ? '(seamless)' : '');
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ hash: hash, server: target, routes: routes }));
+    res.end(JSON.stringify({ hash: hash, server: target, seamless: seamless, routes: routes }));
 }
 
 function loadTweaks() {
