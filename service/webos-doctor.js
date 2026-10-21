@@ -472,6 +472,7 @@
         navigate: navigate,
         currentStream: currentStream,
         sameStream: sameStream,
+        sourceTorrent: function (src) { return TORRENT_URL.exec(src) || hlsSourceTorrent(src); },
         state: state
     };
 })();

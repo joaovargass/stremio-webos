@@ -5,11 +5,10 @@
 (function () {
     var config = (window.STREMIO_TWEAKS || {}).diagnostics || { refreshMs: 1000 };
     var doctorConfig = (window.STREMIO_TWEAKS || {}).doctor || {};
-    var TORRENT_URL = /^(https?:\/\/[^/]+)\/([0-9a-f]{40})\/(\d+)/i;
     var HLS_URL = /^(https?:\/\/[^/]+)\/hlsv2\//i;
     var LAYOUT = [
         { title: 'Saúde', rows: [['health', 'Estado'], ['reason', 'Motivo'], ['total', 'Buffer total'], ['totalBar'], ['player', 'No player'], ['ram', 'Na memória da TV']] },
-        { title: 'Servidor', rows: [['server', 'Em uso'], ['version', 'Versão'], ['limit', 'Limite / cache'], ['transcoder', 'Conversão HLS'], ['candidates', 'Candidatos']] },
+        { title: 'Servidor', rows: [['server', 'Em uso'], ['version', 'Versão'], ['limit', 'Limite / cache'], ['learned', 'Velocidade aprendida'], ['transcoder', 'Conversão HLS'], ['candidates', 'Candidatos']] },
         { title: 'Torrent', rows: [['peers', 'Peers'], ['sources', 'Fontes'], ['speed', 'Velocidade'], ['speedBar'], ['needed', 'Necessário'], ['transfer', 'Baixado / enviado'], ['progress', 'Arquivo'], ['progressBar']] },
         { title: 'Reprodução', rows: [['video', 'Vídeo'], ['position', 'Posição'], ['buffer', 'Buffer à frente'], ['bufferBar'], ['frames', 'Frames perdidos'], ['recovery', 'Recuperações'], ['subtitle', 'Legenda automática'], ['error', 'Erro']] }
     ];
@@ -114,11 +113,28 @@
         return fetch(target).then(function (resp) { return resp.json(); }).catch(function () { return null; });
     }
 
+    function learnedRate(key) {
+        // What the doctor learned one server delivers, or null while it is still learning
+        try {
+            var saved = JSON.parse(localStorage.getItem(key) || 'null');
+            return saved && saved.n >= 30 ? saved.rate : null;
+        } catch (_e) {
+            return null;
+        }
+    }
+
+    function learnedText() {
+        // The speeds the ranking compares sources with, so a lowered 4K is explained
+        var tv = learnedRate('twk.tvRate');
+        var lan = learnedRate('twk.lanRate');
+        return 'TV ' + (tv ? mbps(tv) : 'aprendendo') + ' · Mac ' + (lan ? mbps(lan) : 'aprendendo');
+    }
+
     function renderServer(origin, proxy, src, hash) {
         // Fill the server section with the server this video really comes from: its own route, else the proxy upstream
         if (!origin) {
             setText('server', src.split('?')[0].replace(/^https?:\/\//, '').slice(0, 60));
-            ['version', 'limit', 'transcoder', 'candidates'].forEach(function (key) { setText(key, '-'); });
+            ['version', 'limit', 'learned', 'transcoder', 'candidates'].forEach(function (key) { setText(key, '-'); });
             return;
         }
         var routed = proxy && hash && (proxy.routes || {})[hash];
@@ -131,6 +147,7 @@
         setText('version', info.version || '?');
         var cache = info.cache === 0 ? 'sem cache' : info.cache ? megabytes(info.cache) : '?';
         setText('limit', (info.limit ? mbps(info.limit) : '?') + ' / ' + cache);
+        setText('learned', learnedText());
         var transcoder = proxy && proxy.transcoder;
         setText('transcoder', transcoder ? transcoder.replace(/^https?:\/\//, '').replace(/\/$/, '') : 'indisponível (sem Mac)', transcoder ? 'good' : 'warn');
         var candidates = proxy && proxy.candidates ? Object.keys(proxy.candidates).map(function (key) {
@@ -208,10 +225,11 @@
             return;
         }
         var src = video.currentSrc || video.src || '';
-        var torrent = TORRENT_URL.exec(src);
         var hls = HLS_URL.exec(src);
+        // An HLS conversion of a torrent still reports that torrent swarm and server
+        var torrent = window.__stremioDoctor.sourceTorrent(src);
         var origin = torrent ? torrent[1] : hls ? hls[1] : null;
-        chip.textContent = torrent ? 'torrent' : hls ? 'HLS' : 'link direto';
+        chip.textContent = hls ? (torrent ? 'HLS · torrent' : 'HLS') : torrent ? 'torrent' : 'link direto';
         sections.Torrent.style.display = torrent ? '' : 'none';
         busy = true;
         Promise.all([
