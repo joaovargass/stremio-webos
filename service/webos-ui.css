@@ -1,9 +1,26 @@
 /* Styles for the webOS tweak overlays, matching the Stremio Theater theme.
-   Only opacity and transform are animated so the TV GPU composites them cheaply.
-   Every component takes its colours, type, radii and motion from these tokens. */
+   Every value comes from the tokens below; components never carry their own colours, sizes or timings.
+   Only opacity and transform are animated so the TV GPU composites them cheaply. */
 
 :root {
+    /* Type */
     --twk-font: 'PlusJakartaSans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --twk-font-subtitles: 'PlusJakartaSans', 'Helvetica Neue', Arial, sans-serif;
+    --twk-text-xs: 1.15vh;
+    --twk-text-s: 1.5vh;
+    --twk-text-m: 1.75vh;
+    --twk-text-l: 2vh;
+    --twk-text-xl: 2.4vh;
+    --twk-weight-medium: 600;
+    --twk-weight-bold: 700;
+    --twk-line-tight: 1.3;
+    --twk-line-subtitles: 1.28;
+    --twk-tracking-title: 0.02em;
+    --twk-tracking-tag: 0.06em;
+    --twk-tracking-label: 0.1em;
+    --twk-tracking-subtitles: 0.01em;
+
+    /* Colours */
     --twk-text: #ffffff;
     --twk-text-soft: rgba(255, 255, 255, 0.88);
     --twk-muted: rgba(255, 255, 255, 0.6);
@@ -11,143 +28,285 @@
     --twk-accent: #7b5bf5;
     --twk-accent-text: #b9a6ff;
     --twk-accent-soft: rgba(123, 91, 245, 0.18);
-    --twk-accent-hover: rgba(123, 91, 245, 0.12);
     --twk-accent-focus: rgba(123, 91, 245, 0.22);
+    --twk-neutral-soft: rgba(255, 255, 255, 0.08);
+    --twk-good: #4fd18b;
+    --twk-good-soft: rgba(79, 209, 139, 0.16);
+    --twk-warn: #f5c518;
+    --twk-warn-soft: rgba(245, 197, 24, 0.16);
+    --twk-bad: #ff6b6b;
+    --twk-bad-soft: rgba(255, 107, 107, 0.18);
     --twk-surface: rgba(12, 12, 16, 0.95);
     --twk-surface-raised: rgba(20, 20, 24, 0.94);
     --twk-surface-solid: #0c0c10;
+    --twk-well: rgba(0, 0, 0, 0.2);
     --twk-line: #2a2a2d;
-    --twk-good: #4fd18b;
-    --twk-warn: #f5c518;
-    --twk-bad: #ff6b6b;
+    --twk-divider: rgba(255, 255, 255, 0.05);
+    --twk-subtitle-shadow: 0 0 0.06em #000000, 0 0 0.12em rgba(0, 0, 0, 0.9), 0 0.08em 0.24em rgba(0, 0, 0, 0.85);
+
+    /* Spacing: vertical in vh, horizontal in vw, so the layout keeps its proportions on every TV resolution */
+    --twk-space-xs: 0.3vh;
+    --twk-space-s: 0.6vh;
+    --twk-space-m: 1vh;
+    --twk-space-l: 1.6vh;
+    --twk-space-xl: 2.2vh;
+    --twk-inset-xs: 0.6vw;
+    --twk-inset-s: 1vw;
+    --twk-inset-m: 1.6vw;
+    --twk-inset-l: 2vw;
+    --twk-edge-y: 5vh;
+    --twk-edge-x: 3vw;
+
+    /* Sizes */
+    --twk-hairline: 1px;
+    --twk-focus-ring: 0.25vh;
+    --twk-control: 4.4vh;
+    --twk-bar: 0.8vh;
+    --twk-dot: 1.4vh;
+    --twk-toast-edge: 0.35vw;
+    --twk-toast-width: 50vw;
+    --twk-log-time: 4.6vw;
+    --twk-log-level: 4.2vw;
+    --twk-log-area: 6.5vw;
+    --twk-width-s: 34vw;
+    --twk-width-m: 42vw;
+    --twk-width-l: 60vw;
+    --twk-width-xl: 70vw;
+    --twk-width-log: 52vw;
+    --twk-height-panel: 90vh;
+    --twk-height-list: 74vh;
+    --twk-subtitles-lift: 6vh;
+    --twk-subtitle-pad: 0.3em;
+    --twk-hint-lift: 8vh;
+    --twk-debug-lift: 12vh;
+
+    /* Shape */
+    --twk-radius-xs: 0.4vh;
     --twk-radius-s: 1vh;
     --twk-radius-m: 1.4vh;
     --twk-radius-l: 2vh;
+    --twk-radius-pill: 999px;
     --twk-shadow: 0 2.5vh 6vh rgba(0, 0, 0, 0.6);
+    --twk-shadow-s: 0 1.5vh 4vh rgba(0, 0, 0, 0.55);
+
+    /* Motion */
     --twk-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --twk-fast: 160ms;
+    --twk-fade: 220ms;
+    --twk-slide: 280ms;
+    --twk-fill: 600ms;
+    --twk-pulse-cycle: 1.2s;
+    --twk-slide-x: 3vw;
+    --twk-slide-y: 2vh;
+
+    /* Layers */
     --twk-z-panel: 2147483647;
     --twk-z-debug: 2147483646;
 }
 
-.twk-toast,
-.twk-diag {
-    font-family: var(--twk-font);
+/* Tones: text colour everywhere; tags and bars add their tone background */
+
+.twk-good { color: var(--twk-good); }
+.twk-warn { color: var(--twk-warn); }
+.twk-bad { color: var(--twk-bad); }
+.twk-faint { color: var(--twk-faint); }
+
+/* Panel frame: diagnostics, source picker, settings and log viewer share it */
+
+.twk-panel {
+    position: fixed;
+    top: var(--twk-edge-y);
+    right: var(--twk-edge-x);
+    width: var(--twk-width-s);
+    max-height: var(--twk-height-panel);
+    overflow: hidden;
+    padding: var(--twk-space-xl) var(--twk-inset-m) var(--twk-space-l);
+    background: var(--twk-surface);
+    border: var(--twk-hairline) solid var(--twk-line);
+    border-radius: var(--twk-radius-l);
+    box-shadow: var(--twk-shadow);
     color: var(--twk-text);
+    font-family: var(--twk-font);
+    font-size: var(--twk-text-m);
     z-index: var(--twk-z-panel);
     pointer-events: none;
+    visibility: hidden;
+    opacity: 0;
+    transform: translateX(var(--twk-slide-x));
     will-change: transform, opacity;
+    /* A closed panel turns invisible only after sliding out, and invisible controls can never hold the focus */
+    transition: opacity var(--twk-fade) ease, transform var(--twk-slide) var(--twk-ease), visibility 0s linear var(--twk-slide);
 }
 
-/* Recovery toast */
-
-.twk-toast {
-    position: fixed;
-    top: 6vh;
-    left: 4vw;
-    display: flex;
-    align-items: center;
-    gap: 1.2vw;
-    max-width: 50vw;
-    padding: 1.6vh 2vw 1.6vh 1.6vw;
-    background: var(--twk-surface-raised);
-    border-left: 0.35vw solid var(--twk-accent);
-    border-radius: 1.4vh;
-    box-shadow: 0 1.5vh 4vh rgba(0, 0, 0, 0.55);
-    font-size: 2.1vh;
-    font-weight: 600;
-    opacity: 0;
-    transform: translateY(-2vh);
-    transition: opacity 220ms ease, transform 260ms var(--twk-ease);
-}
-
-.twk-toast.twk-visible {
-    opacity: 1;
-    transform: translateY(0);
-}
-
-.twk-pulse {
-    flex: none;
-    width: 1.4vh;
-    height: 1.4vh;
-    border-radius: 50%;
-    background: var(--twk-accent);
-    animation: twk-pulse 1.2s ease-in-out infinite;
-}
-
-@keyframes twk-pulse {
-    0%, 100% { transform: scale(0.7); opacity: 0.5; }
-    50% { transform: scale(1.15); opacity: 1; }
-}
-
-/* Diagnostics panel */
-
-.twk-diag {
-    position: fixed;
-    top: 5vh;
-    right: 3vw;
-    width: 34vw;
-    max-height: 90vh;
-    overflow: hidden;
-    padding: 2.2vh 1.8vw 1.6vh;
-    background: var(--twk-surface);
-    border: 1px solid var(--twk-line);
-    border-radius: 2vh;
-    box-shadow: var(--twk-shadow);
-    font-size: 1.75vh;
-    opacity: 0;
-    transform: translateX(3vw);
-    transition: opacity 220ms ease, transform 280ms var(--twk-ease);
-}
-
-.twk-diag.twk-visible {
+.twk-panel.twk-visible {
+    visibility: visible;
     opacity: 1;
     transform: translateX(0);
+    pointer-events: auto;
+    transition-delay: 0s;
 }
 
-.twk-diag-header {
+/* A panel stacked above another is opaque, and the panel below is not drawn while it is open: screens never overlap */
+html[data-twk-top="logview"] .twk-panel.twk-visible:not(.twk-logview) {
+    visibility: hidden;
+}
+
+.twk-panel-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    margin-bottom: 1.6vh;
+    gap: var(--twk-inset-s);
+    margin-bottom: var(--twk-space-l);
 }
 
-.twk-diag-title {
-    font-size: 2.4vh;
-    font-weight: 700;
-    letter-spacing: 0.02em;
+.twk-panel-title {
+    margin-right: auto;
+    font-size: var(--twk-text-xl);
+    font-weight: var(--twk-weight-bold);
+    letter-spacing: var(--twk-tracking-title);
 }
 
-.twk-chip {
-    padding: 0.5vh 1vw;
-    border-radius: 2vh;
+.twk-panel-grid {
+    display: grid;
+    /* minmax(0, 1fr): long unbreakable values shrink with an ellipsis instead of widening the column past the panel */
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: var(--twk-inset-l);
+    align-content: start;
+    width: var(--twk-width-l);
+}
+
+.twk-panel-grid .twk-panel-header {
+    grid-column: 1 / -1;
+}
+
+/* Tag: the key hint or state in a panel header, and the level of a log line in its small size */
+
+.twk-tag {
+    flex: none;
+    padding: var(--twk-space-s) var(--twk-inset-s);
+    border-radius: var(--twk-radius-pill);
     background: var(--twk-accent-soft);
     color: var(--twk-accent-text);
-    font-size: 1.6vh;
-    font-weight: 700;
+    font-size: var(--twk-text-s);
+    font-weight: var(--twk-weight-bold);
+    letter-spacing: var(--twk-tracking-tag);
+    text-align: center;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
 }
+
+.twk-tag[hidden] {
+    display: none;
+}
+
+.twk-tag-s {
+    padding: var(--twk-space-xs) 0;
+    font-size: var(--twk-text-xs);
+}
+
+/* A tone sets the text and the background of a tag together, so the text always matches its tag */
+.twk-tag.twk-good { color: var(--twk-good); background: var(--twk-good-soft); }
+.twk-tag.twk-warn { color: var(--twk-warn); background: var(--twk-warn-soft); }
+.twk-tag.twk-bad { color: var(--twk-bad); background: var(--twk-bad-soft); }
+.twk-tag.twk-faint { color: var(--twk-faint); background: var(--twk-neutral-soft); }
+
+/* Interactive elements: buttons and list items share one hover and focus look, so the pointer and the remote read the same */
+
+.twk-button,
+.twk-item {
+    border: var(--twk-focus-ring) solid transparent;
+    color: var(--twk-text);
+    font: inherit;
+    cursor: pointer;
+    outline: none;
+    transition: background-color var(--twk-fast) ease, border-color var(--twk-fast) ease;
+}
+
+.twk-button:hover,
+.twk-button:focus,
+.twk-item:hover,
+.twk-item.twk-focus {
+    background: var(--twk-accent-focus);
+    border-color: var(--twk-accent);
+}
+
+.twk-button {
+    flex: none;
+    height: var(--twk-control);
+    padding: 0 var(--twk-inset-s);
+    border-radius: var(--twk-radius-pill);
+    background: var(--twk-neutral-soft);
+    font-weight: var(--twk-weight-medium);
+}
+
+.twk-button-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--twk-control);
+    padding: 0;
+    color: var(--twk-text-soft);
+    font-size: var(--twk-text-l);
+    font-weight: var(--twk-weight-bold);
+}
+
+.twk-item {
+    display: block;
+    padding: var(--twk-space-m) var(--twk-inset-s);
+    border-radius: var(--twk-radius-s);
+    background: transparent;
+}
+
+.twk-item-row {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--twk-inset-s);
+}
+
+.twk-item-title {
+    overflow: hidden;
+    font-size: var(--twk-text-l);
+    font-weight: var(--twk-weight-bold);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.twk-item-details {
+    margin-top: var(--twk-space-xs);
+    color: var(--twk-muted);
+    line-height: var(--twk-line-tight);
+}
+
+.twk-item-value {
+    flex: none;
+    font-weight: var(--twk-weight-bold);
+}
+
+.twk-empty {
+    padding: var(--twk-space-xl) 0;
+    color: var(--twk-muted);
+}
+
+/* Sections and value rows of the diagnostics panel */
 
 .twk-section {
     min-width: 0;
-    padding: 1vh 0;
-    border-top: 1px solid var(--twk-line);
+    padding: var(--twk-space-m) 0;
+    border-top: var(--twk-hairline) solid var(--twk-line);
 }
 
 .twk-section-title {
-    margin-bottom: 0.9vh;
+    margin-bottom: var(--twk-space-m);
     color: var(--twk-faint);
-    font-size: 1.5vh;
-    font-weight: 700;
+    font-size: var(--twk-text-s);
+    font-weight: var(--twk-weight-bold);
+    letter-spacing: var(--twk-tracking-label);
     text-transform: uppercase;
-    letter-spacing: 0.1em;
 }
 
 .twk-row {
     display: flex;
     justify-content: space-between;
-    gap: 1vw;
-    padding: 0.25vh 0;
+    gap: var(--twk-inset-s);
+    padding: var(--twk-space-xs) 0;
 }
 
 .twk-label {
@@ -158,7 +317,7 @@
 .twk-value {
     min-width: 0;
     overflow: hidden;
-    font-weight: 600;
+    font-weight: var(--twk-weight-medium);
     text-align: right;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -170,10 +329,10 @@
 
 .twk-bar {
     position: relative;
-    height: 0.8vh;
-    margin: 0.5vh 0 0.9vh;
+    height: var(--twk-bar);
+    margin: var(--twk-space-s) 0 var(--twk-space-m);
     overflow: hidden;
-    border-radius: 0.4vh;
+    border-radius: var(--twk-radius-xs);
     background: var(--twk-line);
 }
 
@@ -183,119 +342,32 @@
     left: 0;
     width: 100%;
     height: 100%;
-    border-radius: 0.4vh;
+    border-radius: var(--twk-radius-xs);
     background: var(--twk-accent);
     transform-origin: left center;
     transform: scaleX(0);
-    transition: transform 600ms var(--twk-ease), background-color 300ms ease;
+    transition: transform var(--twk-fill) var(--twk-ease), background-color var(--twk-slide) ease;
 }
 
-/* Diagnostics in two columns so every section fits the screen without scrolling */
+.twk-bar-fill.twk-good { background: var(--twk-good); }
+.twk-bar-fill.twk-warn { background: var(--twk-warn); }
+.twk-bar-fill.twk-bad { background: var(--twk-bad); }
 
-.twk-diag-grid {
-    display: grid;
-    /* minmax(0, 1fr): long unbreakable values shrink with an ellipsis instead of widening the column past the panel */
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    column-gap: 2vw;
-    align-content: start;
-    width: 60vw;
-}
-
-.twk-diag-grid .twk-diag-header {
-    grid-column: 1 / -1;
-}
-
-/* Pointer (Magic Remote): the interactive panels and every close button take clicks; rows highlight under the cursor */
-
-.twk-sources.twk-visible,
-.twk-settings.twk-visible,
-.twk-logview.twk-visible,
-.twk-visible .twk-close {
-    pointer-events: auto;
-}
-
-.twk-close {
-    flex: none;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 4.4vh;
-    height: 4.4vh;
-    margin-left: 1vw;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.8);
-    font-size: 2.2vh;
-    font-weight: 700;
-    cursor: pointer;
-    transition: background-color 160ms ease;
-}
-
-.twk-close:hover {
-    background: var(--twk-accent);
-    color: var(--twk-text);
-}
-
-.twk-src-row,
-.twk-set-row {
-    cursor: pointer;
-}
-
-.twk-src-row:hover,
-.twk-set-row:hover {
-    background: var(--twk-accent-hover);
-}
-
-.twk-diag-header > .twk-chip {
-    margin-left: auto;
-}
-
-/* Source picker, sharing the diagnostics panel frame */
+/* Source picker and settings sizes */
 
 .twk-sources {
-    width: 42vw;
+    width: var(--twk-width-m);
 }
 
-.twk-src-list {
-    max-height: 74vh;
+.twk-sources-list {
+    max-height: var(--twk-height-list);
     overflow: hidden;
 }
-
-.twk-src-row {
-    padding: 1.1vh 1vw;
-    border-radius: 1.2vh;
-    border: 0.25vh solid transparent;
-}
-
-.twk-src-focus {
-    background: var(--twk-accent-focus);
-    border-color: var(--twk-accent);
-}
-
-.twk-src-title {
-    font-size: 2vh;
-    font-weight: 700;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.twk-src-details {
-    margin-top: 0.4vh;
-    color: rgba(255, 255, 255, 0.65);
-    line-height: 1.3;
-}
-
-.twk-src-empty {
-    padding: 2vh 0;
-    color: rgba(255, 255, 255, 0.65);
-}
-
-/* Settings panel */
 
 .twk-settings {
-    width: 70vw;
-    right: 15vw;
+    right: calc((100vw - var(--twk-width-xl)) / 2);
+    width: var(--twk-width-xl);
+    background: var(--twk-surface-solid);
     /* Rows past the screen scroll: arrows keep the focused row in view, the Magic Remote wheel scrolls freely */
     overflow-y: auto;
 }
@@ -304,108 +376,134 @@
     width: 0;
 }
 
-.twk-set-row {
-    display: flex;
-    justify-content: space-between;
-    gap: 1vw;
-    padding: 0.7vh 0.8vw;
-    border-radius: 1vh;
-    border: 0.25vh solid transparent;
+.twk-settings .twk-item {
+    padding: var(--twk-space-s) var(--twk-inset-xs);
 }
 
-.twk-set-switch {
-    flex: none;
-    font-weight: 700;
+/* The settings title, keys and close button stay at the top while the rows scroll under them */
+.twk-settings .twk-panel-header {
+    position: sticky;
+    top: calc(-1 * var(--twk-space-xl));
+    z-index: 1;
+    margin-top: calc(-1 * var(--twk-space-xl));
+    padding: var(--twk-space-xl) 0 var(--twk-space-m);
+    background: var(--twk-surface-solid);
 }
 
-/* Netflix-like external subtitles: clean white sans text, no box, soft shadow with a thin outline */
+/* Notice toast, centred at the top so it never covers the title or the app logo */
 
-.twk-netflix-subs .twk-subs {
-    padding-bottom: 6vh;
-}
-
-.twk-netflix-subs .twk-subs > :not(br) {
-    padding: 0 0.3em !important;
-    font-family: 'PlusJakartaSans', 'Helvetica Neue', Arial, sans-serif !important;
-    font-weight: 600 !important;
-    line-height: 1.28 !important;
-    letter-spacing: 0.01em;
-    color: var(--twk-text) !important;
-    background-color: transparent !important;
-    text-shadow: 0 0 0.06em #000000, 0 0 0.12em rgba(0, 0, 0, 0.9), 0 0.08em 0.24em rgba(0, 0, 0, 0.85) !important;
-}
-
-/* On-screen debug log: a corner card above the video, below every panel, never focusable; it fades out while a panel is open */
-
-.twk-debug {
+.twk-toast {
     position: fixed;
-    left: 2vw;
-    bottom: 12vh;
-    width: 52vw;
-    padding: 1.2vh 1vw;
-    border-radius: var(--twk-radius-m);
+    top: var(--twk-edge-y);
+    left: 50%;
+    display: flex;
+    align-items: center;
+    gap: var(--twk-inset-s);
+    max-width: var(--twk-toast-width);
+    padding: var(--twk-space-l) var(--twk-inset-l) var(--twk-space-l) var(--twk-inset-m);
     background: var(--twk-surface-raised);
-    border: 1px solid var(--twk-line);
-    box-shadow: var(--twk-shadow);
+    border-left: var(--twk-toast-edge) solid var(--twk-accent);
+    border-radius: var(--twk-radius-m);
+    box-shadow: var(--twk-shadow-s);
     color: var(--twk-text);
     font-family: var(--twk-font);
-    font-size: 1.45vh;
-    line-height: 1.35;
-    font-variant-numeric: tabular-nums;
-    z-index: var(--twk-z-debug);
+    font-size: var(--twk-text-l);
+    font-weight: var(--twk-weight-medium);
+    z-index: var(--twk-z-panel);
     pointer-events: none;
-    transition: opacity 220ms ease;
+    opacity: 0;
+    transform: translate(-50%, calc(-1 * var(--twk-slide-y)));
+    will-change: transform, opacity;
+    transition: opacity var(--twk-fade) ease, transform var(--twk-slide) var(--twk-ease);
 }
 
-.twk-debug.twk-debug-hidden {
+.twk-toast.twk-visible {
+    opacity: 1;
+    transform: translate(-50%, 0);
+}
+
+/* While a panel is open it is what the viewer reads: a notice waits and shows when the panel closes */
+html[data-twk-top]:not([data-twk-top=""]) .twk-toast.twk-visible {
     opacity: 0;
 }
 
-.twk-debug-line {
+.twk-pulse {
+    flex: none;
+    width: var(--twk-dot);
+    height: var(--twk-dot);
+    border-radius: 50%;
+    background: var(--twk-accent);
+    animation: twk-pulse var(--twk-pulse-cycle) ease-in-out infinite;
+}
+
+@keyframes twk-pulse {
+    0%, 100% { transform: scale(0.7); opacity: 0.5; }
+    50% { transform: scale(1.15); opacity: 1; }
+}
+
+/* Loading hint */
+
+.twk-hint {
+    position: fixed;
+    bottom: var(--twk-hint-lift);
+    left: 50%;
+    padding: var(--twk-space-m) var(--twk-inset-l);
+    border-radius: var(--twk-radius-pill);
+    background: var(--twk-surface-raised);
+    border: var(--twk-hairline) solid var(--twk-accent);
+    color: var(--twk-text);
+    font-family: var(--twk-font);
+    font-size: var(--twk-text-l);
+    font-weight: var(--twk-weight-medium);
+    z-index: var(--twk-z-panel);
+    pointer-events: none;
+    opacity: 0;
+    transform: translate(-50%, var(--twk-slide-y));
+    transition: opacity var(--twk-fade) ease, transform var(--twk-slide) var(--twk-ease);
+}
+
+.twk-hint.twk-visible {
+    opacity: 1;
+    transform: translate(-50%, 0);
+}
+
+/* Log line: time, level tag, area and sentence in fixed columns, shared by the corner log and the log viewer */
+
+.twk-log-row {
     display: flex;
     align-items: baseline;
-    gap: 0.6vw;
-    padding: 0.3vh 0;
+    gap: var(--twk-inset-xs);
+    padding: var(--twk-space-xs) 0;
 }
 
-.twk-debug-line + .twk-debug-line {
-    border-top: 1px solid rgba(255, 255, 255, 0.05);
+.twk-log-row + .twk-log-row {
+    border-top: var(--twk-hairline) solid var(--twk-divider);
 }
 
-.twk-debug-time,
-.twk-debug-area {
+.twk-log-row > .twk-tag {
+    width: var(--twk-log-level);
+}
+
+.twk-log-time,
+.twk-log-area {
     flex: none;
     color: var(--twk-faint);
     font-variant-numeric: tabular-nums;
 }
 
-/* Fixed columns keep every sentence starting at the same place */
-.twk-debug-area {
-    width: 6.5vw;
+.twk-log-time {
+    width: var(--twk-log-time);
+}
+
+.twk-log-area {
+    width: var(--twk-log-area);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.twk-debug-level {
-    flex: none;
-    width: 4.2vw;
-    padding: 0.1vh 0;
-    border-radius: 0.6vh;
-    font-size: 1.15vh;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-align: center;
-}
-
-.twk-debug-error { background: rgba(255, 107, 107, 0.18); color: var(--twk-bad); }
-.twk-debug-warn { background: rgba(245, 197, 24, 0.16); color: var(--twk-warn); }
-.twk-debug-action { background: rgba(79, 209, 139, 0.16); color: var(--twk-good); }
-.twk-debug-info { background: var(--twk-accent-soft); color: var(--twk-accent-text); }
-.twk-debug-verbose { background: rgba(255, 255, 255, 0.06); color: var(--twk-faint); }
-
-/* A long message wraps to two lines instead of being cut off */
-.twk-debug-text {
+/* In the corner a long message wraps to two lines at most */
+.twk-log-text {
     min-width: 0;
     overflow: hidden;
     display: -webkit-box;
@@ -414,121 +512,91 @@
     word-break: break-word;
 }
 
-/* A full-screen reader over another panel is opaque, and the panel below is not drawn while it is open: screens never overlap */
-html[data-twk-top="logview"] .twk-diag.twk-visible:not(.twk-logview) {
-    visibility: hidden;
+/* On-screen debug log: a corner card above the video, below every panel, never focusable; it fades out while a panel is open */
+
+.twk-debug {
+    position: fixed;
+    left: var(--twk-inset-l);
+    bottom: var(--twk-debug-lift);
+    width: var(--twk-width-log);
+    padding: var(--twk-space-m) var(--twk-inset-s);
+    border-radius: var(--twk-radius-m);
+    background: var(--twk-surface-raised);
+    border: var(--twk-hairline) solid var(--twk-line);
+    box-shadow: var(--twk-shadow);
+    color: var(--twk-text);
+    font-family: var(--twk-font);
+    font-size: var(--twk-text-s);
+    line-height: var(--twk-line-tight);
+    z-index: var(--twk-z-debug);
+    pointer-events: none;
+    transition: opacity var(--twk-fade) ease;
 }
 
+html[data-twk-top]:not([data-twk-top=""]) .twk-debug {
+    opacity: 0;
+}
+
+/* Full-screen log viewer */
+
 .twk-logview {
-    background: var(--twk-surface-solid);
-    top: 5vh;
-    right: 4vw;
-    left: 4vw;
+    top: var(--twk-edge-y);
+    right: var(--twk-edge-x);
+    left: var(--twk-edge-x);
     display: flex;
     flex-direction: column;
     width: auto;
-    height: 90vh;
-    max-height: 90vh;
-    padding: 1.8vh 1.6vw;
+    height: var(--twk-height-panel);
+    background: var(--twk-surface-solid);
 }
 
-.twk-logview-header {
+.twk-logview .twk-panel-header {
     flex: none;
-}
-
-.twk-logview-controls {
-    display: flex;
-    align-items: center;
-    gap: 0.8vw;
-}
-
-.twk-logview-controls button {
-    padding: 0.8vh 1vw;
-    border: 1px solid var(--twk-line);
-    border-radius: var(--twk-radius-s);
-    background: var(--twk-surface-raised);
-    color: var(--twk-text);
-    font: inherit;
-    cursor: pointer;
-}
-
-.twk-logview-controls button:focus,
-.twk-logview-controls button:hover {
-    outline: 2px solid var(--twk-accent);
-    background: var(--twk-accent-soft);
-}
-
-.twk-logview-close {
-    margin-left: 0;
 }
 
 .twk-logview-counter {
     flex: none;
-    margin-bottom: 1vh;
+    margin-bottom: var(--twk-space-m);
     color: var(--twk-muted);
-    font-size: 1.5vh;
+    font-size: var(--twk-text-s);
 }
 
 .twk-logview-scroll {
-    min-height: 0;
     flex: 1;
+    min-height: 0;
     overflow: auto;
-    border: 1px solid var(--twk-line);
+    padding: 0 var(--twk-inset-s);
+    border: var(--twk-hairline) solid var(--twk-line);
     border-radius: var(--twk-radius-s);
-    background: rgba(0, 0, 0, 0.2);
-    outline: none;
+    background: var(--twk-well);
 }
 
-.twk-logview-scroll:focus {
-    border-color: var(--twk-accent);
-}
-
-.twk-logview-row {
+.twk-logview .twk-log-row {
     align-items: flex-start;
-    padding: 0.75vh 0.8vw;
+    padding: var(--twk-space-s) 0;
 }
 
-.twk-logview-text {
+.twk-logview .twk-log-text {
     display: block;
     overflow: visible;
-    min-width: 0;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-    word-break: break-word;
     -webkit-line-clamp: unset;
-    -webkit-box-orient: initial;
 }
 
-/* Loading hint */
+/* Netflix-like external subtitles: clean white sans text, no box, soft shadow with a thin outline */
 
-.twk-hint {
-    position: fixed;
-    bottom: 8vh;
-    left: 50%;
-    padding: 1.2vh 2vw;
-    border-radius: 3vh;
-    background: rgba(20, 20, 24, 0.9);
-    border: 1px solid var(--twk-accent);
-    color: var(--twk-text);
-    font-family: var(--twk-font);
-    font-size: 2vh;
-    font-weight: 600;
-    z-index: var(--twk-z-panel);
-    pointer-events: none;
-    opacity: 0;
-    transform: translate(-50%, 2vh);
-    transition: opacity 220ms ease, transform 260ms var(--twk-ease);
+.twk-netflix-subs .twk-subs {
+    padding-bottom: var(--twk-subtitles-lift);
 }
 
-.twk-hint.twk-visible {
-    opacity: 1;
-    transform: translate(-50%, 0);
+.twk-netflix-subs .twk-subs > :not(br) {
+    padding: 0 var(--twk-subtitle-pad) !important;
+    font-family: var(--twk-font-subtitles) !important;
+    font-weight: var(--twk-weight-medium) !important;
+    line-height: var(--twk-line-subtitles) !important;
+    letter-spacing: var(--twk-tracking-subtitles);
+    color: var(--twk-text) !important;
+    background-color: transparent !important;
+    text-shadow: var(--twk-subtitle-shadow) !important;
 }
-
-.twk-good { color: var(--twk-good); }
-.twk-warn { color: var(--twk-warn); }
-.twk-bad { color: var(--twk-bad); }
-
-.twk-bar-fill.twk-good { background: var(--twk-good); }
-.twk-bar-fill.twk-warn { background: var(--twk-warn); }
-.twk-bar-fill.twk-bad { background: var(--twk-bad); }

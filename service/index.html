@@ -47,50 +47,7 @@
             }));
         })(window.STREMIO_TWEAKS);
     </script>
-    <script>
-        // Open panels normally replace one another; the log viewer may sit above Settings
-        window.__twkPanels = (function() {
-            var panels = {};
-            var stack = [];
-            function publish() {
-                // The top panel is published on the page, so a panel left below a stacked one stops being drawn under it
-                document.documentElement.setAttribute('data-twk-top', stack.length ? stack[stack.length - 1] : '');
-            }
-            return {
-                add: function(name, close) { panels[name] = close; },
-                opened: function(name, preserveCurrent) {
-                    if (preserveCurrent) {
-                        stack = stack.filter(function(active) { return active !== name; });
-                        stack.push(name);
-                        publish();
-                        return;
-                    }
-                    stack.slice().reverse().forEach(function(active) {
-                        if (active !== name && panels[active]) panels[active]();
-                    });
-                    stack = stack.filter(function(active) { return active === name; });
-                    if (!stack.length) stack.push(name);
-                    publish();
-                },
-                closed: function(name) {
-                    stack = stack.filter(function(active) { return active !== name; });
-                    publish();
-                },
-                current: function() { return stack.length ? stack[stack.length - 1] : null; },
-                closeCurrent: function() {
-                    var name = stack.length ? stack[stack.length - 1] : null;
-                    if (name && panels[name]) panels[name]();
-                }
-            };
-        })();
-        window.addEventListener('keydown', function(e) {
-            var name = window.__twkPanels.current();
-            if (!name || (e.keyCode !== 461 && e.keyCode !== 27 && e.keyCode !== 8)) return;
-            e.preventDefault();
-            e.stopImmediatePropagation();
-            window.__twkPanels.closeCurrent();
-        }, true);
-    </script>
+    <script defer src="webos-shared.js"></script>
     <script defer src="webos-i18n.js"></script>
     <script defer src="webos-debug.js"></script>
     <script defer src="webos-logview.js"></script>

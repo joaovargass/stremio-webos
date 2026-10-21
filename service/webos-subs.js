@@ -1,11 +1,14 @@
 // Centralized subtitles: cleans the addon results, adds OpenSubtitles v3 matches
 // found by video hash, file size and file name, orders tracks by language
-// preference and picks one automatically (embedded first, then pt-BR, then the
-// video's original language). Parameters come from window.STREMIO_TWEAKS.subtitles.
+// preference and picks one automatically (the Stremio profile subtitle languages
+// first, then the configured priority: embedded, Brazilian Portuguese, the
+// language being heard). Parameters come from window.STREMIO_TWEAKS.subtitles.
 (function () {
     var config = (window.STREMIO_TWEAKS || {}).subtitles || {};
     var simple = (window.STREMIO_TWEAKS || {}).simple || {};
+    var shared = window.__twkShared;
     var t = window.__twkI18n.t;
+    var NOTICE_MS = 2500;
     var LANG_GROUPS = {
         'pt-br': ['pob', 'pt-br', 'pt_br', 'ptbr', 'pb', 'brazilian', 'portuguese (brazil)', 'português (brasil)'],
         pt: ['por', 'pt', 'pt-pt', 'portuguese', 'português']
@@ -45,7 +48,7 @@
 
     function nativeLang(audioTracks) {
         // The language that will be heard: the Stremio audio language when the file has it, else the first track
-        var langs = (audioTracks || []).filter(function (t) { return t && t.lang; }).map(function (t) { return baseLang(t.lang); });
+        var langs = (audioTracks || []).filter(function (track) { return track && track.lang; }).map(function (track) { return baseLang(track.lang); });
         if (profile.audio && langs.indexOf(profile.audio) !== -1) return profile.audio;
         return langs[0] || null;
     }
@@ -134,7 +137,7 @@
         var hints = stream.behaviorHints || {};
         var server = (window.__STREMIO_SERVER_URL__ || 'http://127.0.0.1:11470').replace(/\/$/, '');
         var media = stream.infoHash ? server + '/' + stream.infoHash + '/' + (stream.fileIdx || 0) : stream.url;
-        var fetchJson = window.__stremioDoctor.fetchJson;
+        var fetchJson = shared.fetchJson;
         // The hash needs file data, which a cold torrent may not have for minutes; past the limit the filename alone is used
         var hashPromise = media ? fetchJson(server + '/opensubHash?videoUrl=' + encodeURIComponent(media), config.lookupTimeoutMs) : Promise.resolve(null);
         hashPromise.then(function (hash) {
@@ -210,8 +213,8 @@
 
     function choose(tracks, wanted, native) {
         // Prefer non-SDH tracks, then the ones most likely timed for this release
-        var hits = tracks.filter(function (t) { return matches(t, wanted, native); });
-        hits.forEach(function (t, i) { t.__pickOrder = i; });
+        var hits = tracks.filter(function (track) { return matches(track, wanted, native); });
+        hits.forEach(function (track, i) { track.__pickOrder = i; });
         hits.sort(function (a, b) {
             return isForced(a) - isForced(b) || (config.avoidSdh ? isSdh(a) - isSdh(b) : 0) || scoreOf(b) - scoreOf(a) || a.__pickOrder - b.__pickOrder;
         });
@@ -261,13 +264,7 @@
         }, (config.embeddedWaitMs || 0) + 500);
     }
 
-    function whenCoreReady(callback) {
-        // The core bridge is created asynchronously by main.js
-        if (window.core && typeof window.core.getState === 'function') return callback(window.core);
-        setTimeout(function () { whenCoreReady(callback); }, 500);
-    }
-
-    whenCoreReady(function (core) {
+    shared.whenCoreReady(function (core) {
         window.__twkI18n.refresh().then(function () {
             loadProfile(core);
             window.addEventListener('historyChange', function () { loadProfile(core); });
@@ -286,14 +283,6 @@
         window.__stremioSubPick = null;
     }
 
-    function toast(text) {
-        // Short notice in the shared toast
-        if (!window.__stremioToast) return;
-        window.__stremioToast.show(text);
-        clearTimeout(toast.timer);
-        toast.timer = setTimeout(window.__stremioToast.hide, 2500);
-    }
-
     function cycleChoices(state) {
         // Embedded tracks first (non-SDH, preferred languages first), then the external list, then off
         var native = window.__stremioNativeLang || null;
@@ -304,8 +293,8 @@
         });
         // The player lists addon and OpenSubtitles copies side by side; simple mode keeps one external track per language
         var langs = {};
-        var extra = (state.extraSubtitlesTracks || []).filter(function (t) {
-            var lang = baseLang(t.lang);
+        var extra = (state.extraSubtitlesTracks || []).filter(function (track) {
+            var lang = baseLang(track.lang);
             if (simple.enabled && langs[lang]) return false;
             langs[lang] = true;
             return true;
@@ -328,12 +317,12 @@
         if (next.kind === 'embedded') video.selectSubtitlesTrack(next.id);
         else if (next.kind === 'extra') video.selectExtraSubtitlesTrack(next.id);
         else video.disableSubtitlesTracks();
-        toast(t('subtitle.toast', { label: next.label }));
+        shared.notify(t('subtitle.toast', { label: next.label }), NOTICE_MS);
     }
 
     // The configured remote key cycles subtitles on the player
     window.addEventListener('keydown', function (e) {
-        if (!config.enabled || e.keyCode !== config.cycleKey || (location.hash || '').indexOf('#/player') !== 0) return;
+        if (!config.enabled || e.keyCode !== config.cycleKey || !shared.onPlayer()) return;
         e.preventDefault();
         e.stopPropagation();
         cycleSubtitles();

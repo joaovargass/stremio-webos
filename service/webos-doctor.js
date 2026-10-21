@@ -8,8 +8,10 @@
 (function () {
     var config = (window.STREMIO_TWEAKS || {}).doctor || {};
     var hints = (window.STREMIO_TWEAKS || {}).hints || {};
+    var shared = window.__twkShared;
+    var fetchJson = shared.fetchJson;
+    var onPlayer = shared.onPlayer;
     var t = window.__twkI18n.t;
-    var TORRENT_URL = /^(https?:\/\/[^/]+)\/([0-9a-f]{40})\/(\d+)/i;
     var HINT_KEY = 'twk.hint.v3';
     var state = { status: 'ok', reason: '', totalBufferS: 0, playerBufferS: 0, ramBufferS: 0, speed: 0, needed: 0, switches: {}, exhausted: {}, tried: {}, started: {} };
     var stalledSince = null;
@@ -32,18 +34,9 @@
     var race = { videoId: null, list: [], best: null };
     var pendingResume = null;
     var rates = { tv: { key: 'twk.tvRate', savedAt: 0 }, lan: { key: 'twk.lanRate', savedAt: 0 } };
-    rates.tv.value = readRate(rates.tv.key);
-    rates.lan.value = readRate(rates.lan.key);
+    rates.tv.value = shared.savedRate(rates.tv.key);
+    rates.lan.value = shared.savedRate(rates.lan.key);
     var learned = rates.tv.value;
-
-    function readRate(key) {
-        // Learned download rate of one server: { rate: bytes per second, n: samples }
-        try {
-            return JSON.parse(localStorage.getItem(key) || 'null') || { rate: 0, n: 0 };
-        } catch (_e) {
-            return { rate: 0, n: 0 };
-        }
-    }
 
     function learnRate(slot, speed) {
         // Moving average of what one server delivers while the player is hungry, saved every 30 s
@@ -56,38 +49,8 @@
     }
 
     function toast(text, hideAfterMs) {
-        // Reuse the recovery toast so every notice looks the same
-        if (!window.__stremioToast) return;
-        window.__stremioToast.show(text);
-        if (hideAfterMs) setTimeout(window.__stremioToast.hide, hideAfterMs);
-    }
-
-    function onPlayer() {
-        // The doctor only works on the player route
-        return (location.hash || '').indexOf('#/player') === 0;
-    }
-
-    function playerBuffer(video) {
-        // Seconds the native pipeline holds past the playhead
-        for (var i = 0; i < video.buffered.length; i++) {
-            if (video.buffered.start(i) <= video.currentTime && video.buffered.end(i) >= video.currentTime) {
-                return video.buffered.end(i) - video.currentTime;
-            }
-        }
-        return 0;
-    }
-
-    function fetchJson(target, timeoutMs) {
-        // Fetch JSON and resolve null on any failure; a server holding the request (a torrent without metadata) must not freeze the caller
-        var controller = new AbortController();
-        var timer = setTimeout(function () { controller.abort(); }, timeoutMs || config.requestTimeoutMs || 4000);
-        return fetch(target, { signal: controller.signal })
-            .then(function (r) { return r.json(); })
-            .catch(function () { return null; })
-            .then(function (body) {
-                clearTimeout(timer);
-                return body;
-            });
+        // Every doctor notice goes to the shared toast for a set time
+        shared.notify(text, hideAfterMs);
     }
 
     function currentVideoId() {
@@ -119,8 +82,7 @@
 
     function resolutionOf(stream) {
         // Vertical resolution named by the source, 0 when unknown
-        var text = (String(stream.name || '') + ' ' + String(stream.description || stream.title || '')).toLowerCase();
-        return /2160p|\b4k\b|\buhd\b/.test(text) ? 2160 : /1080p/.test(text) ? 1080 : /720p/.test(text) ? 720 : /480p/.test(text) ? 480 : 0;
+        return shared.resolution(String(stream.name || '') + ' ' + String(stream.description || stream.title || ''));
     }
 
     function candidates(ranked, current, count) {
@@ -130,7 +92,7 @@
         var index = -1;
         ranked.forEach(function (s, i) { if (index === -1 && sameStream(s, current)) index = i; });
         var open = ranked.slice(index + 1).filter(function (s) {
-            return !sameStream(s, current) && !tried.some(function (t) { return sameStream(s, t); });
+            return !sameStream(s, current) && !tried.some(function (other) { return sameStream(s, other); });
         });
         var list = open.slice(0, count);
         // A thin swarm often hits a whole resolution, so one candidate is always the best source of a lower one
@@ -201,7 +163,7 @@
                 var noPeers = tried.length >= 2 && stats.every(function (st) { return !st || !(st.peers > 0); });
                 if (!noPeers) {
                     var lanOff = window.STREMIO_TWEAKS && window.STREMIO_TWEAKS.servers && window.STREMIO_TWEAKS.servers.useLan === false;
-                    // Name the missing Mac when the switch is on but no LAN server answers
+                    // Name the missing computer when the switch is on but no LAN server answers
                     var help = lanOff ? t('doctor.enableLanOrChoose') : state.lanFallback ? t('doctor.choose') : t('doctor.turnOnComputerOrChoose');
                     return toast(t('doctor.noFastSource') + ' ' + help + ' ' + t('doctor.anotherSource'), 9000);
                 }
@@ -220,12 +182,12 @@
     }
 
     function prepareOn(next, fraction) {
-        // Warm a candidate on the server that would play it: the Mac when the current video already uses it or the TV cannot keep up
+        // Warm a candidate on the server that would play it: the computer when the current video already uses it or the TV cannot keep up
         var hash = next.infoHash ? next.infoHash.toLowerCase() : null;
         var proxy = lastProxy;
         var currentOnLan = !!(proxy && lastHash && (proxy.routes || {})[lastHash]);
         var lan = !!(config.prewarmOnLan !== false && hash && proxy && proxy.fallback && !(proxy.routes || {})[hash] && (currentOnLan || heavyForTv(hash)));
-        // The race then measures and later plays this source on the Mac, where it was warmed
+        // The race then measures and later plays this source on the computer, where it was warmed
         if (lan) {
             prerouted[hash] = true;
             rerouted[hash] = true;
@@ -276,7 +238,7 @@
         // A short quality summary reads better than the release file name
         var short = window.__stremioTweaks && window.__stremioTweaks.summary ? window.__stremioTweaks.summary(stream) : '';
         var title = short || String(stream.description || stream.title || '').split('\n').filter(function (l) { return l && l.indexOf('⭐') !== 0 && l.indexOf('⚠') !== 0; })[0] || t('doctor.nextSource');
-        // Say when the new source comes from the Mac, as every other Mac use is announced
+        // Say when the new source comes from the computer, as every other use of it is announced
         var viaComputer = stream.infoHash && prerouted[stream.infoHash.toLowerCase()] ? ' · ' + t('doctor.viaComputer') : '';
         if (viaComputer) announced[stream.infoHash.toLowerCase()] = true;
         toast(prefix + title.slice(0, 70) + viaComputer, 5000);
@@ -334,16 +296,16 @@
         fetchJson('/__tweaks/route?hash=' + hash + '&to=remote').then(function (route) {
             stalledSince = null;
             loadingSince = null;
-            // The Mac must prove it delivers this torrent; one that has not even found it yet would starve the player
+            // The computer must prove it delivers this torrent; one that has not even found it yet would starve the player
             lanCheck = { hash: hash, at: Date.now(), time: video.currentTime };
-            // The proxy moved the running download to the Mac at the next byte; reload only when it could not
+            // The proxy moved the running download to the computer at the next byte; reload only when it could not
             if (!route || !route.seamless) reloadInPlace(video);
         });
         return true;
     }
 
     function lanDelivers(video, hash, stats) {
-        // After the verify period, a routed video must have moved or its torrent must download on the Mac
+        // After the verify period, a routed video must have moved or its torrent must download on the computer
         if (lanCheck && lanCheck.hash !== hash) lanCheck = null;
         if (!lanCheck) return true;
         if (Date.now() - lanCheck.at < (config.lanVerifyMs || 15000)) return true;
@@ -353,7 +315,7 @@
     }
 
     function leaveLan(video, hash) {
-        // Bring a video the Mac could not deliver back to the TV; a video already watched goes on to the next source
+        // Bring a video the computer could not deliver back to the TV; a video already watched goes on to the next source
         console.warn('[doctor] the LAN server delivered nothing, back to the TV', hash);
         toast(t('doctor.computerFailed'), 6000);
         var watched = !!state.started[currentVideoId()];
@@ -394,19 +356,19 @@
         if (proxy) lastProxy = proxy;
         lastHash = hash;
         if (proxy) state.lanFallback = proxy.fallback;
-        // A video moved to the Mac goes back to the TV when the Mac stops answering; tell the viewer once
+        // A video moved to the computer goes back to the TV when the computer stops answering; tell the viewer once
         var routedTo = hash && proxy && (proxy.routes || {})[hash];
         if (routedTo && (proxy.candidates || {})[routedTo] === false && !lanLost[hash]) {
             lanLost[hash] = true;
             toast(t('doctor.noComputer'), 6000);
         }
-        // A source already warmed on the Mac (heavy for the TV) starts there; say so once, as every Mac use is announced
+        // A source already warmed on the computer (heavy for the TV) starts there; say so once, as every use of it is announced
         if (routedTo && (proxy.candidates || {})[routedTo] !== false && !announced[hash]) {
             announced[hash] = true;
             toast(t('doctor.computerSource'), 5000);
         }
         if (!lanDelivers(video, hash, stats)) return leaveLan(video, hash);
-        state.playerBufferS = playerBuffer(video);
+        state.playerBufferS = shared.bufferAhead(video);
         state.ramBufferS = needed ? ramBytes / needed : 0;
         state.totalBufferS = state.playerBufferS + state.ramBufferS;
         state.speed = speed;
@@ -415,7 +377,7 @@
         // Once a picture has played, switches become rare: the viewer is watching
         if (video.currentTime > 1 && video.readyState >= 3) state.started[currentVideoId()] = true;
         var onTv = !!proxy && /^https?:\/\/(127\.|localhost)/.test(proxy.upstream) && !(proxy.routes || {})[hash];
-        // Only a hungry player shows what its server can deliver: the TV for its own videos, the Mac for routed ones
+        // Only a hungry player shows what its server can deliver: the TV for its own videos, the computer for routed ones
         var hungry = hash && playing && speed > 0 && state.playerBufferS < 20;
         if (config.learnTvSpeed !== false && onTv && hungry) learnRate(rates.tv, speed);
         if (config.learnLanSpeed !== false && !onTv && proxy && hungry) learnRate(rates.lan, speed);
@@ -531,19 +493,14 @@
         }).catch(function () {});
     }
 
-    function hlsSourceTorrent(src) {
-        // An HLS conversion of a torrent keeps reporting that torrent: its swarm still feeds the picture
-        var match = /[?&]mediaURL=([^&]+)/.exec(src);
-        return match && /\/hlsv2\//.test(src) ? TORRENT_URL.exec(decodeURIComponent(match[1])) : null;
-    }
-
     function tick() {
         // Sample the player, the torrent and the proxy, then evaluate
         if (busy || !config.enabled || !onPlayer()) return;
         var video = document.querySelector('video');
         if (!video) return;
         var src = video.currentSrc || video.src || '';
-        var torrent = TORRENT_URL.exec(src) || hlsSourceTorrent(src);
+        // An HLS conversion of a torrent keeps reporting that torrent: its swarm still feeds the picture
+        var torrent = shared.sourceTorrent(src);
         busy = true;
         Promise.all([
             torrent ? fetchJson(torrent[1] + '/' + torrent[2] + '/' + torrent[3] + '/stats.json') : null,
@@ -598,9 +555,7 @@
         navigate: navigate,
         currentStream: currentStream,
         sameStream: sameStream,
-        sourceTorrent: function (src) { return TORRENT_URL.exec(src) || hlsSourceTorrent(src); },
         heavyForTv: heavyForTv,
-        fetchJson: fetchJson,
         state: state
     };
 })();

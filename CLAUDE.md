@@ -26,6 +26,8 @@ service/              # webOS service
   answercache.js      # Short-lived RAM copies of repeated server answers (subtitle hash, track list, HLS start)
   index.html          # Theater entry point (sets __STREMIO_SERVER_URL__ to :8080, loads tweaks.json + saved on/off choices)
   tweaks.json         # Defaults for every tweak, shared by launch.js and the frontend
+  webos-shared.js     # Loaded first: panel stack (Back closes the top panel), panel frame and button, notice toast, shared helpers
+  webos-i18n.js       # Translation dictionary; texts follow the Stremio interface language (English, Brazilian Portuguese)
   webos-enhance.js    # Points the profile at the proxy, adds trackers, ranks streams, prewarms the recommended one
   webos-retry.js      # Stall recovery and in-player HLS fallback (no external player)
   webos-subs.js       # Subtitle list cleanup, OpenSubtitles lookup, sync-likelihood ranking, automatic choice, Netflix style
@@ -35,8 +37,9 @@ service/              # webOS service
   webos-sources.js    # Source picker (player button and green key)
   webos-settings.js   # On/off switches for every tweak (yellow key)
   webos-diag.js       # Diagnostics panel opened from the player control bar
-  webos-ui.css        # Styles for every tweak UI, all on the shared :root design tokens (colours, type, radii, motion)
+  webos-ui.css        # Styles for every tweak UI: every value is a :root token; one panel, button, item, tag and log-row component
   webos-debug.js      # On-screen log: time, level, area, sentence; detail setting debug.detail (essential, detailed, everything)
+  webos-logview.js    # Full-screen log reader opened from settings, stacked above them
   package.json        # Service manifest (main: launch.js)
   services.json       # Luna service registration
   server.js           # [downloaded] Official Stremio streaming server

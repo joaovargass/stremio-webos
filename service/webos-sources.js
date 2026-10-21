@@ -4,9 +4,13 @@
 // player was opened straight from the library. Parameters come from STREMIO_TWEAKS.sources.
 (function () {
     var config = (window.STREMIO_TWEAKS || {}).sources || {};
+    var shared = window.__twkShared;
+    var element = shared.element;
+    var onPlayer = shared.onPlayer;
     var t = window.__twkI18n.t;
     var KEYS = { up: 38, down: 40, enter: 13, back: 461, escape: 27 };
-    var panel = null;
+    var NOTICE_MS = 6000;
+    var view = null;
     var list = null;
     var hint = null;
     var items = [];
@@ -16,19 +20,6 @@
     var loadingTimer = null;
     var liveTimer = null;
     var REFRESH = { refresh: true };
-
-    function element(tag, className, text) {
-        // Small DOM helper for the picker
-        var node = document.createElement(tag);
-        if (className) node.className = className;
-        if (text) node.textContent = text;
-        return node;
-    }
-
-    function onPlayer() {
-        // The picker only makes sense on the player route
-        return (location.hash || '').indexOf('#/player') === 0;
-    }
 
     function onTitle() {
         // A title page lists its sources too: a movie, or an episode chosen in a series
@@ -80,7 +71,7 @@
 
     function describe(stream) {
         // Two short lines per source: addon and quality, then the release details
-        var name = String(stream.name || 'Fonte').replace(/\n/g, ' · ');
+        var name = String(stream.name || t('doctor.nextSource')).replace(/\n/g, ' · ');
         var lines = String(stream.description || stream.title || '').split('\n').filter(function (l) { return l; });
         var badge = lines.filter(function (l) { return l.indexOf('⭐') === 0 || l.indexOf('⚠') === 0; })[0] || '';
         var details = lines.filter(function (l) { return l.indexOf('⭐') !== 0 && l.indexOf('⚠') !== 0; }).join(' ');
@@ -91,37 +82,31 @@
     }
 
     function createPanel() {
-        // Build the picker frame once; rows are rebuilt on every open
-        panel = element('div', 'twk-diag twk-sources');
-        var header = panel.appendChild(element('div', 'twk-diag-header'));
-        header.appendChild(element('div', 'twk-diag-title', t('sources.title')));
-        header.appendChild(element('div', 'twk-chip', t('sources.keys')));
-        // The Magic Remote pointer closes the panel with this button, the remote with Back
-        header.appendChild(element('div', 'twk-close', '✕')).addEventListener('click', function (e) { e.stopPropagation(); hide(); });
-        list = panel.appendChild(element('div', 'twk-src-list'));
-        document.body.appendChild(panel);
+        // Build the picker on the shared frame once; rows are rebuilt on every open
+        view = shared.frame('sources', 'twk-sources', hide);
+        list = view.root.appendChild(element('div', 'twk-sources-list'));
     }
 
     function render(current) {
         // Fill the rows, mark the playing source and move the focus to it
         list.textContent = '';
         if (!items.length) {
-            list.appendChild(element('div', 'twk-src-empty', t('sources.none')));
+            list.appendChild(element('div', 'twk-empty', t('sources.none')));
             return;
         }
         items.forEach(function (stream, i) {
-            var row = list.appendChild(element('div', 'twk-src-row'));
+            var row = list.appendChild(element('div', 'twk-item'));
             // The pointer focuses a row by hovering and plays it with a click
             row.addEventListener('mouseenter', function () { focus = i; moveFocus(0); });
             row.addEventListener('click', function (e) { e.stopPropagation(); focus = i; choose(); });
             if (stream === REFRESH) {
-                row.appendChild(element('div', 'twk-src-title', t('sources.refresh')));
-                row.appendChild(element('div', 'twk-src-details', t('sources.refreshDetails')));
+                row.appendChild(element('div', 'twk-item-title', t('sources.refresh')));
+                row.appendChild(element('div', 'twk-item-details', t('sources.refreshDetails')));
                 return;
             }
             var info = describe(stream);
-            row.appendChild(element('div', 'twk-src-title', (stream === current ? '▶ ' : '') + info.title));
-            row.appendChild(element('div', 'twk-src-details', info.details));
+            row.appendChild(element('div', 'twk-item-title', (stream === current ? '▶ ' : '') + info.title));
+            row.appendChild(element('div', 'twk-item-details', info.details));
         });
         focus = Math.max(0, items.indexOf(current));
         moveFocus(0);
@@ -131,7 +116,7 @@
         // Highlight one row and keep it visible
         focus = Math.max(0, Math.min(items.length - 1, focus + delta));
         Array.prototype.forEach.call(list.children, function (row, i) {
-            row.classList.toggle('twk-src-focus', i === focus);
+            row.classList.toggle('twk-focus', i === focus);
             if (i === focus && row.scrollIntoView) row.scrollIntoView({ block: 'nearest' });
         });
     }
@@ -141,11 +126,11 @@
         open = true;
         return window.__twkI18n.refresh().then(function () {
             if (!open) return;
-            if (!panel) createPanel();
+            if (!view) createPanel();
+            view.label(t('sources.title'), t('sources.keys'));
             list.textContent = '';
-            list.appendChild(element('div', 'twk-src-empty', t('sources.loading')));
-            requestAnimationFrame(function () { panel.classList.add('twk-visible'); });
-            window.__twkPanels.opened('sources');
+            list.appendChild(element('div', 'twk-empty', t('sources.loading')));
+            view.show();
             return Promise.all([ensureStreams(), window.__stremioDoctor && onPlayer() ? window.__stremioDoctor.currentStream() : null]).then(function (results) {
                 if (!open) return;
                 playing = results[1];
@@ -177,8 +162,7 @@
         open = false;
         if (liveTimer) clearInterval(liveTimer);
         liveTimer = null;
-        if (panel) panel.classList.remove('twk-visible');
-        window.__twkPanels.closed('sources');
+        if (view) view.hide();
     }
 
     function choose() {
@@ -242,19 +226,8 @@
     var resumeShown = {};
 
     function notice(text) {
-        // Short notice in the shared toast
-        if (!window.__stremioToast) return;
-        window.__stremioToast.show(text);
-        clearTimeout(notice.timer);
-        notice.timer = setTimeout(window.__stremioToast.hide, 6000);
-    }
-
-    function clock(seconds) {
-        // Format seconds as h:mm:ss or m:ss
-        var s = Math.floor(seconds);
-        var h = Math.floor(s / 3600);
-        var m = Math.floor(s % 3600 / 60);
-        return (h ? h + ':' + (m < 10 ? '0' : '') : '') + m + ':' + (s % 60 < 10 ? '0' : '') + (s % 60);
+        // Notices of the picker, restart and title hints stay long enough to read the key they mention
+        shared.notify(text, NOTICE_MS);
     }
 
     function restartFromStart() {
@@ -287,7 +260,7 @@
         var key = video.getAttribute('src');
         if (resumeShown[key]) return;
         resumeShown[key] = true;
-        if (video.currentTime > 30) notice(t('restart.resumeHint', { position: clock(video.currentTime) }));
+        if (video.currentTime > 30) notice(t('restart.resumeHint', { position: shared.duration(video.currentTime) }));
     }
 
     var simple = (window.STREMIO_TWEAKS || {}).simple || {};
@@ -380,7 +353,6 @@
         return;
     }
 
-    window.__twkPanels.add('sources', hide);
     window.addEventListener('keydown', onKey, true);
     // The app router navigates with pushState and announces it as historyChange
     window.addEventListener('hashchange', watchLoading);

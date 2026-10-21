@@ -4,6 +4,7 @@
 // warm it. All parameters come from window.STREMIO_TWEAKS, loaded from tweaks.json.
 (function () {
     var config = window.STREMIO_TWEAKS || {};
+    var shared = window.__twkShared;
     var t = window.__twkI18n.t;
     var prewarmed = {};
     var lastRanking = null;
@@ -31,12 +32,6 @@
         };
     }
 
-    function whenCoreReady(callback) {
-        // The core bridge is created asynchronously by main.js
-        if (window.core && typeof window.core.getState === 'function') return callback(window.core);
-        setTimeout(function () { whenCoreReady(callback); }, 500);
-    }
-
     function syncServer(core) {
         // Point the profile at the local proxy, which picks the fastest upstream server
         var target = config.servers && config.servers.coreUrl;
@@ -53,7 +48,7 @@
     }
 
     function prewarm(stream, fraction, onLan) {
-        // Start a torrent and fetch its bytes at a position (the start by default) so a later play begins at once; onLan warms it on the Mac
+        // Start a torrent and fetch its bytes at a position (the start by default) so a later play begins at once; onLan warms it on the computer
         var settings = config.prewarm || {};
         var key = stream && stream.infoHash + '@' + Math.round((fraction || 0) * 100);
         if (settings.enabled === false || !stream || !stream.infoHash || prewarmed[key]) return;
@@ -130,18 +125,16 @@
     function measure() {
         // Read peers and speed of each candidate against its bitrate, one request per source at a time
         var settings = config.liveTest || {};
-        var doctor = window.__stremioDoctor;
         if (Date.now() - live.started > (settings.windowMs || 30000)) {
             console.info('[tweaks] source test done', JSON.stringify(live.classes));
             releaseCandidates();
             return stopTesting();
         }
-        if (!doctor) return;
         live.candidates.forEach(function (s) {
             var key = liveKey(s);
             if (live.busy[key]) return;
             live.busy[key] = true;
-            doctor.fetchJson('/' + key + '/stats.json').then(function (st) {
+            shared.fetchJson('/' + key + '/stats.json').then(function (st) {
                 live.busy[key] = false;
                 if (!st) return;
                 var needed = window.__stremioStreamBitrate[s.infoHash] || 1048576;
@@ -159,7 +152,7 @@
     }
 
     function liveLabel(stream) {
-        // Short pt-BR line with what the background test measured for a source
+        // Short line with what the background test measured for a source
         var key = liveKey(stream);
         var entry = live.stats[key];
         var cls = live.classes[key];
@@ -181,15 +174,6 @@
         return match ? parseInt(match[1], 10) : null;
     }
 
-    function parseResolution(text) {
-        // Map resolution keywords to a vertical pixel count
-        if (/2160p|\b4k\b|\buhd\b/.test(text)) return 2160;
-        if (/1080p|\bfhd\b/.test(text)) return 1080;
-        if (/720p/.test(text)) return 720;
-        if (/480p|\bsd\b/.test(text)) return 480;
-        return 0;
-    }
-
     function runtimeSeconds(runtime) {
         // Parse "68 min", "1h 30min" or "2h" into seconds
         var text = String(runtime || '');
@@ -205,16 +189,6 @@
         if (!match) return null;
         var unit = { tb: 1e12, gb: 1e9, mb: 1e6 }[match[2].toLowerCase()];
         return parseFloat(match[1]) * unit;
-    }
-
-    function learnedRate(key) {
-        // Download rate the doctor learned for one server ('twk.tvRate', 'twk.lanRate'), in bytes per second, once enough samples exist
-        try {
-            var saved = JSON.parse(localStorage.getItem(key) || 'null');
-            return saved && saved.n >= 30 ? saved.rate : null;
-        } catch (_e) {
-            return null;
-        }
     }
 
     function refreshLan() {
@@ -240,7 +214,7 @@
         var warnings = [];
         var playable = !isNotice(stream) && (typeof stream.url === 'string' || typeof stream.infoHash === 'string');
         if (!playable) return { score: -1000, warnings: warnings };
-        var resolution = parseResolution(text);
+        var resolution = shared.resolution(text);
         var seeds = parseSeeds(text);
         var direct = typeof stream.url === 'string' && !stream.infoHash;
         var needed = rank.minSeedsByResolution[resolution] || 2;
@@ -272,7 +246,7 @@
         // Preferred quality: a cap above which sources lose, and a bonus for the exact target
         if (ctx.targetRes && resolution > ctx.targetRes) score -= 150;
         if (ctx.targetRes && resolution === ctx.targetRes) score += 15;
-        // Heavier than what the server that would play it delivers: the Mac when available, else the TV
+        // Heavier than what the server that would play it delivers: the computer when available, else the TV
         var over = ctx.lan ? rank.overLanSpeed : rank.overTvSpeed;
         var limit = ctx.lan ? ctx.lanRate : ctx.tvRate;
         if (over && bitrate && limit && bitrate > limit * over.margin) {
@@ -283,7 +257,7 @@
     }
 
     function startsOnLan(stream) {
-        // A heavy source starts on the Mac when one answers and the doctor learned the TV cannot sustain it
+        // A heavy source starts on the computer when one answers and the doctor learned the TV cannot sustain it
         var doctor = window.__stremioDoctor;
         return !!(stream && stream.infoHash && doctor && (config.doctor || {}).startOnLanWhenHeavy !== false &&
             (config.servers || {}).useLan !== false && window.__stremioLanAvailable === true && doctor.heavyForTv(stream.infoHash.toLowerCase()));
@@ -299,8 +273,8 @@
         var context = {
             targetRes: simple.quality && simple.quality !== 'best' ? parseInt(simple.quality, 10) : null,
             runtimeS: runtimeSeconds(meta && meta.runtime),
-            tvRate: learnedRate('twk.tvRate'),
-            lanRate: learnedRate('twk.lanRate'),
+            tvRate: shared.learnedRate('twk.tvRate'),
+            lanRate: shared.learnedRate('twk.lanRate'),
             lan: (config.servers || {}).useLan !== false && window.__stremioLanAvailable === true
         };
         // The title page polls the core many times a second; the same sources in the same context reuse the last ranking
@@ -351,7 +325,7 @@
         // Publish the ranked list for the picker and the doctor, warm the recommended source and build the state for the UI
         window.__stremioRankedFor = ranking.rankedFor;
         window.__stremioRankedStreams = ranking.rankedStreams;
-        // Warm the recommended torrent only on the title page, where the click to play happens, on the Mac when the TV cannot sustain it
+        // Warm the recommended torrent only on the title page, where the click to play happens, on the computer when the TV cannot sustain it
         var recommended = ranking.rankedStreams[0];
         if ((location.hash || '').indexOf('#/detail') === 0) {
             prewarm(recommended, 0, startsOnLan(recommended));
@@ -364,12 +338,12 @@
     function summary(stream, compact) {
         // One clean line: resolution, audio, size and, unless compact, seeders
         var text = streamText(stream);
-        var resolution = parseResolution(text);
+        var resolution = shared.resolution(text);
         var audio = /atmos/.test(text) ? 'Atmos' : /truehd/.test(text) ? 'TrueHD' : /dts/.test(text) ? 'DTS' : /ddp|dd\+|eac3|e-ac-3/.test(text) ? 'Dolby Digital Plus' : /\bac3\b|\bdd\b|dd5/.test(text) ? 'Dolby Digital' : /aac/.test(text) ? 'AAC' : '';
         var channels = /7\.1/.test(text) ? '7.1' : /5\.1|6ch/.test(text) ? '5.1' : '';
         var size = /💾\s*([\d.]+\s*[tgm]b)/i.exec(text);
         var seeds = parseSeeds(text);
-        return [resolution === 2160 ? '4K' : resolution ? resolution + 'p' : '', [audio, channels].filter(Boolean).join(' '), size ? size[1].toUpperCase() : '', seeds !== null && !compact ? seeds + ' seeds' : '']
+        return [resolution === 2160 ? '4K' : resolution ? resolution + 'p' : '', [audio, channels].filter(Boolean).join(' '), size ? size[1].toUpperCase() : '', seeds !== null && !compact ? t('enhance.seeds', { count: seeds }) : '']
             .filter(Boolean).join(' · ');
     }
 
@@ -411,7 +385,7 @@
     refreshLan();
     setInterval(refreshLan, 30000);
 
-    whenCoreReady(function (core) {
+    shared.whenCoreReady(function (core) {
         window.__twkI18n.refresh().then(function () {
             wrapGetState(core);
             syncServer(core);

@@ -5,67 +5,69 @@
 // change reloads the app to apply it.
 (function () {
     var config = (window.STREMIO_TWEAKS || {}).settings || {};
+    var shared = window.__twkShared;
+    var element = shared.element;
+    var t = window.__twkI18n.t;
     var STORAGE_KEY = 'twk.overrides';
     var KEYS = { up: 38, down: 40, left: 37, right: 39, enter: 13, back: 461, escape: 27 };
-    var QUALITY_LABELS = { best: 'Melhor (até 4K)', '2160p': '4K', '1080p': '1080p', '720p': '720p' };
-    var DETAIL_LABELS = { essential: 'Essencial', detailed: 'Padrão', everything: 'Tudo' };
+    var APPLY_DELAY_MS = 800;
+    var QUALITY = ['best', '2160p', '1080p', '720p'];
+    var DETAIL = ['essential', 'detailed', 'everything'];
     var GROUPS = [
-        { title: 'Modo simples', titleKey: 'settings.simple', column: 0, items: [
-            ['simple.enabled', 'Um botão Assistir, sem lista de addons'],
-            ['simple.quality', 'Qualidade preferida', ['best', '2160p', '1080p', '720p'], QUALITY_LABELS],
-            ['restart.enabled', 'Botão azul recomeça do início'],
-            ['simple.directOpen', 'OK no cartão abre o título (segure para opções)'],
-            ['simple.autoPlayEpisodes', 'Episódio toca direto, sem lista de fontes']
+        { title: 'settings.simple', column: 0, items: [
+            ['simple.enabled'],
+            ['simple.quality', QUALITY, 'quality'],
+            ['restart.enabled'],
+            ['simple.directOpen'],
+            ['simple.autoPlayEpisodes']
         ] },
-        { title: 'Fontes', titleKey: 'settings.sources', column: 0, items: [
-            ['ranking.enabled', 'Ordenar fontes e marcar a recomendada'],
-            ['prewarm.enabled', 'Pré-carregar a fonte recomendada'],
-            ['liveTest.enabled', 'Testar as melhores fontes antes de recomendar'],
-            ['peerBoost.enabled', 'Trackers extras nos torrents'],
-            ['readAhead.mergeSources', 'Somar torrents do mesmo arquivo para baixar mais rápido'],
-            ['sources.enabled', 'Seletor de fontes (botão verde)']
+        { title: 'settings.sources', column: 0, items: [
+            ['ranking.enabled'],
+            ['prewarm.enabled'],
+            ['liveTest.enabled'],
+            ['peerBoost.enabled'],
+            ['readAhead.mergeSources'],
+            ['sources.enabled']
         ] },
-        { title: 'Correção automática', titleKey: 'settings.doctor', column: 1, items: [
-            ['doctor.enabled', 'Monitorar a reprodução'],
-            ['doctor.autoSwitch', 'Trocar de fonte sozinho quando falha'],
-            ['stallRetry.enabled', 'Retomar quando o torrent trava'],
-            ['hlsFallback.enabled', 'Converter áudio ou vídeo incompatível'],
-            ['doctor.prewarmNext', 'Preparar a próxima fonte em segundo plano'],
-            ['doctor.prewarmOnLan', 'Preparar no Mac quando ele já estiver em uso'],
-            ['doctor.convertFrozen', 'Converter quando a imagem trava com dados prontos']
+        { title: 'settings.doctor', column: 1, items: [
+            ['doctor.enabled'],
+            ['doctor.autoSwitch'],
+            ['stallRetry.enabled'],
+            ['hlsFallback.enabled'],
+            ['doctor.prewarmNext'],
+            ['doctor.prewarmOnLan'],
+            ['doctor.convertFrozen']
         ] },
-        { title: 'Legendas', titleKey: 'settings.subtitles', column: 1, items: [
-            ['subtitles.enabled', 'Central de legendas'],
-            ['subtitles.autoPick', 'Escolher legenda automaticamente'],
-            ['subtitles.openSubtitles', 'Buscar no OpenSubtitles'],
-            ['subtitles.avoidSdh', 'Evitar legendas para surdos (SDH)'],
-            ['subtitles.netflixStyle', 'Legendas no estilo Netflix'],
-            ['subtitles.autoSync', 'Sincronizar legendas externas'],
-            ['subtitles.syncOnTv', 'Sincronizar na própria TV (o Mac só ajuda)'],
-            ['subtitles.convert', 'Corrigir a formatação das legendas na TV'],
-            ['subtitles.allowHttp', 'Aceitar legendas sem conexão segura (HTTPS)']
+        { title: 'settings.subtitles', column: 1, items: [
+            ['subtitles.enabled'],
+            ['subtitles.autoPick'],
+            ['subtitles.openSubtitles'],
+            ['subtitles.avoidSdh'],
+            ['subtitles.netflixStyle'],
+            ['subtitles.autoSync'],
+            ['subtitles.syncOnTv'],
+            ['subtitles.convert'],
+            ['subtitles.allowHttp']
         ] },
-        { title: 'TV e rede', titleKey: 'settings.network', column: 0, items: [
-            ['readAhead.enabled', 'Buffer extra na memória da TV'],
-            ['answerCache.enabled', 'Guardar na memória o começo das conversões e as listas de faixas'],
-            ['servers.useLan', 'Usar o servidor do Mac quando a TV não der conta'],
-            ['doctor.startOnLanWhenHeavy', 'Começar pelo Mac se a fonte for pesada para a TV'],
-            ['devMode.keepAlive', 'Renovar o modo desenvolvedor sozinho']
+        { title: 'settings.network', column: 0, items: [
+            ['readAhead.enabled'],
+            ['answerCache.enabled'],
+            ['servers.useLan'],
+            ['doctor.startOnLanWhenHeavy'],
+            ['devMode.keepAlive']
         ] },
-        { title: 'Avisos', titleKey: 'settings.hints', column: 0, items: [
-            ['sources.loadingHint', 'Dica "Demorando?" ao carregar'],
-            ['restart.resumeHint', 'Aviso "Retomando de..."'],
-            ['hints.firstRunToast', 'Aviso de novidades']
+        { title: 'settings.hints', column: 0, items: [
+            ['sources.loadingHint'],
+            ['restart.resumeHint'],
+            ['hints.firstRunToast']
         ] },
-        { title: 'Depuração', titleKey: 'settings.debug', column: 1, items: [
-            ['debug.overlay', 'Mostrar o registro de depuração na tela'],
-            ['debug.detail', 'Detalhe do registro', ['essential', 'detailed', 'everything'], DETAIL_LABELS],
-            ['debug.logs', 'Abrir registro de depuração', null, null, 'action']
+        { title: 'settings.debug', column: 1, items: [
+            ['debug.overlay'],
+            ['debug.detail', DETAIL, 'detail'],
+            ['debug.openLog', null, null, 'action']
         ] }
     ];
-    var panel = null;
-    var panelTitle;
-    var keysHint;
+    var view = null;
     var rows = [];
     var groupTitles = [];
     var focus = 0;
@@ -73,18 +75,6 @@
     var changed = false;
     var reloadAfterLogView = false;
     var reloadTimer = null;
-
-    function translated(key, fallback) {
-        return window.__twkI18n && window.__twkI18n.t ? window.__twkI18n.t(key) : fallback;
-    }
-
-    function element(tag, className, text) {
-        // Small DOM helper for the panel
-        var node = document.createElement(tag);
-        if (className) node.className = className;
-        if (text) node.textContent = text;
-        return node;
-    }
 
     function readOverrides() {
         // Saved choices, empty when storage is unavailable
@@ -100,54 +90,53 @@
     }
 
     function createPanel() {
-        // Build the switch list once from GROUPS
-        panel = element('div', 'twk-diag twk-diag-grid twk-settings');
-        var header = panel.appendChild(element('div', 'twk-diag-header'));
-        panelTitle = header.appendChild(element('div', 'twk-diag-title'));
-        keysHint = header.appendChild(element('div', 'twk-chip'));
-        // The Magic Remote pointer closes the panel with this button, the remote with Back
-        header.appendChild(element('div', 'twk-close', '✕')).addEventListener('click', function (e) { e.stopPropagation(); hide(); });
-        // Two real columns so Up and Down follow what the viewer sees, Left and Right switch columns
+        // Build the shared frame and the rows once from GROUPS, in two real columns so Up and Down follow what the viewer sees
+        view = shared.frame('settings', 'twk-panel-grid twk-settings', hide);
         [0, 1].forEach(function (column) {
-            var holder = panel.appendChild(element('div', 'twk-set-column'));
+            var holder = view.root.appendChild(element('div'));
             GROUPS.filter(function (group) { return group.column === column; }).forEach(function (group) {
                 var box = holder.appendChild(element('div', 'twk-section'));
-                groupTitles.push({ node: box.appendChild(element('div', 'twk-section-title')), key: group.titleKey, fallback: group.title });
-                group.items.forEach(function (item) {
-                    var row = box.appendChild(element('div', 'twk-set-row'));
-                    var label = row.appendChild(element('span', 'twk-set-label'));
-                    var value = row.appendChild(element('span', 'twk-set-switch'));
-                    var labelKey = item[4] === 'action' ? 'settings.debug.openLog' : item[0] === 'restart.enabled' ? 'settings.restart.enabled' : 'settings.' + item[0];
-                    rows.push({ key: item[0], row: row, label: label, labelKey: labelKey, labelFallback: item[1], value: value, on: item[4] === 'action' ? false : current(item[0], item[2]), options: item[2], labels: item[3], action: item[4] === 'action', column: column });
-                    // The pointer focuses a row by hovering and switches it with a click
-                    var index = rows.length - 1;
-                    row.addEventListener('mouseenter', function () { focus = index; paint(); });
-                    row.addEventListener('click', function (e) { e.stopPropagation(); focus = index; toggleFocused(); });
-                });
+                groupTitles.push({ node: box.appendChild(element('div', 'twk-section-title')), key: group.title });
+                group.items.forEach(function (item) { addRow(box, item, column); });
             });
         });
-        document.body.appendChild(panel);
+    }
+
+    function addRow(box, item, column) {
+        // One row per setting: a switch, a choice cycled by OK, or an action
+        var row = box.appendChild(element('div', 'twk-item twk-item-row twk-setting'));
+        var entry = {
+            key: item[0],
+            row: row,
+            label: row.appendChild(element('span', 'twk-item-label')),
+            value: row.appendChild(element('span', 'twk-item-value')),
+            options: item[1] || null,
+            choices: item[2] || null,
+            action: item[3] === 'action',
+            column: column
+        };
+        entry.on = entry.action ? false : current(entry.key, entry.options);
+        rows.push(entry);
+        // The pointer focuses a row by hovering and switches it with a click
+        var index = rows.length - 1;
+        row.addEventListener('mouseenter', function () { focus = index; paint(); });
+        row.addEventListener('click', function (e) { e.stopPropagation(); focus = index; toggleFocused(); });
     }
 
     function paint() {
-        // Show each switch state and the focused row
-        panelTitle.textContent = translated('settings.title', 'Ajustes');
-        keysHint.textContent = translated('settings.keys', '↑↓ ←→ OK');
-        groupTitles.forEach(function (entry) { entry.node.textContent = translated(entry.key, entry.fallback); });
+        // Show each switch state in the current language and mark the focused row
+        view.label(t('settings.title'), t('settings.keys'));
+        groupTitles.forEach(function (entry) { entry.node.textContent = t(entry.key); });
         rows.forEach(function (entry, i) {
-            entry.label.textContent = translated(entry.labelKey, entry.labelFallback);
-            if (entry.action) {
-                entry.value.textContent = translated('settings.open', 'Abrir');
-                entry.value.className = 'twk-set-switch twk-good';
-            } else if (entry.options) {
-                var optionGroup = entry.key === 'simple.quality' ? 'quality' : entry.key === 'debug.detail' ? 'detail' : null;
-                entry.value.textContent = optionGroup ? translated('choice.' + optionGroup + '.' + entry.on, entry.labels[entry.on] || entry.on) : entry.labels[entry.on] || entry.on;
-                entry.value.className = 'twk-set-switch twk-good';
+            entry.label.textContent = t('settings.' + entry.key);
+            if (entry.action || entry.options) {
+                entry.value.textContent = entry.action ? t('settings.open') : t('choice.' + entry.choices + '.' + entry.on);
+                entry.value.className = 'twk-item-value twk-good';
             } else {
-                entry.value.textContent = translated(entry.on ? 'choice.on' : 'choice.off', entry.on ? 'Ligado' : 'Desligado');
-                entry.value.className = 'twk-set-switch ' + (entry.on ? 'twk-good' : 'twk-bad');
+                entry.value.textContent = t(entry.on ? 'choice.on' : 'choice.off');
+                entry.value.className = 'twk-item-value ' + (entry.on ? 'twk-good' : 'twk-bad');
             }
-            entry.row.classList.toggle('twk-src-focus', i === focus);
+            entry.row.classList.toggle('twk-focus', i === focus);
         });
     }
 
@@ -187,24 +176,30 @@
 
     function show() {
         // Open the panel on top of any screen
-        return Promise.resolve(window.__twkI18n && window.__twkI18n.refresh ? window.__twkI18n.refresh() : null).then(function () {
-            if (!panel) createPanel();
+        return window.__twkI18n.refresh().then(function () {
+            if (!view) createPanel();
             open = true;
             changed = false;
             paint();
-            requestAnimationFrame(function () { panel.classList.add('twk-visible'); });
-            window.__twkPanels.opened('settings');
+            view.show();
         });
     }
 
+    function applyChanges() {
+        // Reload once so every module and the service start with the new choices
+        shared.notify(t('settings.applied'));
+        reloadTimer = setTimeout(function () {
+            reloadTimer = null;
+            location.reload();
+        }, APPLY_DELAY_MS);
+    }
+
     function hide() {
-        // Close the panel and reload once so every module starts with the new choices
+        // Close the panel; changed choices apply right away
+        if (!open) return;
         open = false;
-        panel.classList.remove('twk-visible');
-        window.__twkPanels.closed('settings');
-        if (!changed) return;
-        if (window.__stremioToast) window.__stremioToast.show(translated('settings.applied', 'Ajustes salvos, aplicando…'));
-        setTimeout(function () { location.reload(); }, 800);
+        view.hide();
+        if (changed) applyChanges();
     }
 
     function onKey(e) {
@@ -231,20 +226,21 @@
         rows[focus].row.scrollIntoView({ block: 'nearest' });
     }
 
-    window.__twkPanels.add('settings', function () { if (open) hide(); });
-    window.addEventListener('twk-logview-opened', function () {
+    function onLogViewOpened() {
+        // The viewer opened over a pending reload: the reload waits until the viewer closes
         if (reloadTimer) clearTimeout(reloadTimer);
         reloadTimer = null;
-    });
-    window.addEventListener('twk-logview-closed', function () {
+    }
+
+    function onLogViewClosed() {
+        // Choices changed before the viewer opened apply once it closes
         if (!reloadAfterLogView) return;
-        if (window.__stremioToast) window.__stremioToast.show(translated('settings.applied', 'Ajustes salvos, aplicando…'));
-        reloadTimer = setTimeout(function () {
-            reloadTimer = null;
-            reloadAfterLogView = false;
-            location.reload();
-        }, 800);
-    });
+        reloadAfterLogView = false;
+        applyChanges();
+    }
+
+    window.addEventListener('twk-logview-opened', onLogViewOpened);
+    window.addEventListener('twk-logview-closed', onLogViewClosed);
     window.addEventListener('keydown', onKey, true);
 
     window.__stremioSettings = {

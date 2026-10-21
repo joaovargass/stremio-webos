@@ -7,39 +7,31 @@
 // remux produced by the streaming server. Parameters come from window.STREMIO_TWEAKS.
 (function () {
     var config = window.STREMIO_TWEAKS || {};
+    var shared = window.__twkShared;
     var t = window.__twkI18n.t;
     var retryConfig = config.stallRetry || { maxRetries: 10, retryDelayMs: 3000 };
     var hlsConfig = config.hlsFallback || { enabled: false };
-    var TORRENT_URL = /^(https?:\/\/[^/]+)\/([0-9a-f]{40})\/(\d+)/i;
     var state = { url: null, retries: 0, hlsUrl: null, forced: false };
-    var overlay = null;
-    var overlayText = null;
+    var statusNotice = null;
 
     function showOverlay(text) {
-        // Lazily create the toast and slide it in with the latest status
-        if (!overlay) {
-            overlay = document.createElement('div');
-            overlay.className = 'twk-toast';
-            overlay.appendChild(document.createElement('span')).className = 'twk-pulse';
-            overlayText = overlay.appendChild(document.createElement('span'));
-            document.body.appendChild(overlay);
-        }
-        overlayText.textContent = text;
-        requestAnimationFrame(function () { overlay.classList.add('twk-visible'); });
+        // Recovery status stays in the shared toast until playback resumes
+        statusNotice = shared.notify(text);
     }
 
     function hideOverlay() {
-        // Slide the toast out without destroying it
-        if (overlay) overlay.classList.remove('twk-visible');
+        // Playback resumed or the player closed: the recovery status goes, a notice of another module stays
+        if (statusNotice !== null) shared.hideNotice(statusNotice);
+        statusNotice = null;
     }
 
     function fetchStats(match) {
         // Peers and speed of the stalled file, time-limited: the server holds stats exactly for torrents without data, and the reload must not wait
-        return window.__stremioDoctor.fetchJson(match[1] + '/' + match[2] + '/' + match[3] + '/stats.json');
+        return shared.fetchJson(match[1] + '/' + match[2] + '/' + match[3] + '/stats.json');
     }
 
     function describe(stats) {
-        // Build the pt-BR status line shown while waiting for the swarm; simple mode hides the swarm numbers
+        // The status line shown while waiting for the swarm; simple mode hides the swarm numbers
         if ((config.simple || {}).enabled) return t('retry.loading');
         if (!stats) return t('retry.waiting');
         var kbps = Math.round((stats.downloadSpeed || 0) / 1024);
@@ -85,7 +77,7 @@
     function switchToHls(video, stream, resumeAt, message, force, rejected) {
         // Replace a rejected source with an HLS remux from the streaming server, re-encoded when asked or when the probe shows a remux cannot help
         var currentSrc = video.getAttribute('src');
-        var torrent = TORRENT_URL.exec(stream.url);
+        var torrent = shared.torrentOf(stream.url);
         var serverPromise = torrent ? Promise.resolve(torrent[1] + '/') : activeServer();
         showOverlay(message || t('retry.unsupported'));
         serverPromise.then(function (server) {
@@ -140,7 +132,7 @@
     function probe(server, mediaUrl) {
         // The streams of a source as the streaming server's ffprobe sees them; ffprobe takes seconds, so it gets its own, longer limit
         var probeUrl = server.replace(/\/$/, '') + '/hlsv2/probe?mediaURL=' + encodeURIComponent(mediaUrl);
-        return window.__stremioDoctor.fetchJson(probeUrl, hlsConfig.probeTimeoutMs);
+        return shared.fetchJson(probeUrl, hlsConfig.probeTimeoutMs);
     }
 
     function probeHasAudio(server, mediaUrl) {
@@ -170,7 +162,7 @@
                 if (window.__stremioDoctor) window.__stremioDoctor.nextSource('tvCannotPlay', true);
                 return;
             }
-            var torrent = TORRENT_URL.exec(src);
+            var torrent = shared.torrentOf(src);
             var serverPromise = torrent ? Promise.resolve(torrent[1] + '/') : activeServer();
             serverPromise.then(function (server) {
                 return server ? probeHasAudio(server, src) : false;
@@ -198,7 +190,7 @@
 
     function onRouteChange() {
         // Leaving the player route hides any pending status box
-        if ((location.hash || '').indexOf('#/player') !== 0) hideOverlay();
+        if (!shared.onPlayer()) hideOverlay();
     }
 
     // The app router navigates with pushState and announces it as historyChange
@@ -206,7 +198,6 @@
     window.addEventListener('historyChange', onRouteChange);
 
     window.__stremioRetryState = state;
-    window.__stremioToast = { show: showOverlay, hide: hideOverlay };
 
     window.__stremioConvert = function (video, message) {
         // Convert the playing source to HLS on the server, for a picture that froze although its data is already there
@@ -232,7 +223,7 @@
         var code = video.error ? video.error.code : null;
         var resumeAt = video.__lastTime || 0;
         var onHls = state.hlsUrl !== null && video.getAttribute('src') === state.hlsUrl;
-        var match = TORRENT_URL.exec(stream.url);
+        var match = shared.torrentOf(stream.url);
         // A torrent with no data yet, or one that already played and stopped, is starving; a decode error (3) means a broken file
         var played = video.__playedSrc === video.getAttribute('src');
         var starved = match !== null && code !== 3 && (video.readyState === 0 || played);

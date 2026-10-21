@@ -29,7 +29,8 @@
             'settings.restart.enabled': 'Blue button starts over from the beginning', 'settings.applied': 'Settings saved, applying…',
             'logview.title': 'Debug log', 'logview.detail.essential': 'Essential detail', 'logview.detail.detailed': 'Standard detail', 'logview.detail.everything': 'Full detail',
             'logview.entries': 'Log entries',
-            'logview.close': 'Close log', 'logview.follow': 'Follow new lines', 'logview.pauseFollow': 'Pause following',
+            'panel.close': 'Close',
+            'logview.follow': 'Follow new lines', 'logview.pauseFollow': 'Pause following',
             'logview.count': '{shown} of {retained} lines shown · the last {limit} are kept',
             'choice.quality.best': 'Best (up to 4K)',
             'choice.quality.2160p': '4K',
@@ -179,6 +180,7 @@
             'enhance.live.testing': 'testing · {speed}',
             'enhance.live.tested': 'tested · {speed} · {peers} peers',
             'enhance.live.slow': 'slow in test',
+            'enhance.seeds': '{count} seeds',
         },
         'pt-BR': {
             'settings.title': 'Ajustes', 'settings.keys': '↑↓ ←→ OK',
@@ -208,7 +210,8 @@
             'settings.restart.enabled': 'Botão azul recomeça do início', 'settings.applied': 'Ajustes salvos, aplicando…',
             'logview.title': 'Registro de depuração', 'logview.detail.essential': 'Detalhe essencial', 'logview.detail.detailed': 'Detalhe padrão', 'logview.detail.everything': 'Detalhe completo',
             'logview.entries': 'Linhas do registro',
-            'logview.close': 'Fechar registro', 'logview.follow': 'Acompanhar novas linhas', 'logview.pauseFollow': 'Pausar acompanhamento',
+            'panel.close': 'Fechar',
+            'logview.follow': 'Acompanhar novas linhas', 'logview.pauseFollow': 'Pausar acompanhamento',
             'logview.count': '{shown} de {retained} linhas exibidas · as últimas {limit} ficam guardadas',
             'choice.quality.best': 'Melhor (até 4K)',
             'choice.quality.2160p': '4K',
@@ -358,6 +361,7 @@
             'enhance.live.testing': 'testando · {speed}',
             'enhance.live.tested': 'testada · {speed} · {peers} peers',
             'enhance.live.slow': 'lenta no teste',
+            'enhance.seeds': '{count} seeds',
         }
     };
     var locale = 'en';

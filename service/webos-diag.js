@@ -5,6 +5,8 @@
 (function () {
     var config = (window.STREMIO_TWEAKS || {}).diagnostics || { refreshMs: 1000 };
     var doctorConfig = (window.STREMIO_TWEAKS || {}).doctor || {};
+    var shared = window.__twkShared;
+    var element = shared.element;
     var t = window.__twkI18n.t;
     var HLS_URL = /^(https?:\/\/[^/]+)\/hlsv2\//i;
     var LAYOUT = [
@@ -14,8 +16,7 @@
         { title: 'diag.playback', rows: [['video', 'diag.video'], ['position', 'diag.position'], ['buffer', 'diag.bufferAhead'], ['bufferBar'], ['frames', 'diag.droppedFrames'], ['recovery', 'diag.recoveries'], ['subtitle', 'diag.autoSubtitle'], ['error', 'diag.error']] }
     ];
     var BUFFER_TARGET_S = 30;
-    var panel = null;
-    var chip = null;
+    var view = null;
     var fields = {};
     var sections = {};
     var timer = null;
@@ -23,25 +24,11 @@
     var serverInfo = {};
     var labels = [];
 
-    function element(tag, className, text) {
-        // Small DOM helper used to build the panel once
-        var node = document.createElement(tag);
-        if (className) node.className = className;
-        if (text) node.textContent = text;
-        return node;
-    }
-
     function createPanel() {
-        // Build header, sections, value cells and bars once
-        panel = element('div', 'twk-diag twk-diag-grid');
-        var header = element('div', 'twk-diag-header');
-        header.appendChild(element('div', 'twk-diag-title', t('diag.title')));
-        chip = header.appendChild(element('div', 'twk-chip', '...'));
-        // The Magic Remote pointer closes the panel with this button, the remote with Back
-        header.appendChild(element('div', 'twk-close', '✕')).addEventListener('click', function (e) { e.stopPropagation(); close(); });
-        panel.appendChild(header);
+        // Build the shared frame, then sections, value cells and bars once
+        view = shared.frame('diag', 'twk-panel-grid', close);
         LAYOUT.forEach(function (section) {
-            var box = panel.appendChild(element('div', 'twk-section'));
+            var box = view.root.appendChild(element('div', 'twk-section'));
             labels.push({ node: box.appendChild(element('div', 'twk-section-title', t(section.title))), key: section.title });
             sections[section.title] = box;
             section.rows.forEach(function (row) {
@@ -55,14 +42,12 @@
                 fields[row[0]] = line.appendChild(element('span', 'twk-value', '-'));
             });
         });
-        document.body.appendChild(panel);
     }
 
     function refreshLabels() {
         // Labels follow a language changed in Stremio while the app runs
         labels.forEach(function (entry) { entry.node.textContent = t(entry.key); });
-        var title = panel && panel.querySelector('.twk-diag-title');
-        if (title) title.textContent = t('diag.title');
+        view.label(t('diag.title'), view.tag.textContent || '…');
     }
 
     function setText(key, text, tone) {
@@ -91,24 +76,6 @@
         return mb >= 1000 ? (mb / 1000).toFixed(1) + ' GB' : mb.toFixed(0) + ' MB';
     }
 
-    function clock(seconds) {
-        // Format seconds as h:mm:ss
-        var s = Math.max(0, Math.floor(seconds || 0));
-        var h = Math.floor(s / 3600);
-        var m = Math.floor(s % 3600 / 60);
-        return (h ? h + ':' + (m < 10 ? '0' : '') : '') + m + ':' + ((s % 60) < 10 ? '0' : '') + (s % 60);
-    }
-
-    function bufferAhead(video) {
-        // Seconds of media buffered past the playhead
-        for (var i = 0; i < video.buffered.length; i++) {
-            if (video.buffered.start(i) <= video.currentTime && video.buffered.end(i) >= video.currentTime) {
-                return video.buffered.end(i) - video.currentTime;
-            }
-        }
-        return 0;
-    }
-
     function loadServerInfo(key, base) {
         // Fetch the server version once per upstream, through the same-origin base URL
         if (serverInfo[key]) return;
@@ -119,25 +86,10 @@
         }).catch(function () { serverInfo[key] = { unavailable: true }; });
     }
 
-    function fetchJson(target) {
-        // Same time-limited fetch as the doctor, so a slow server never freezes the panel
-        return window.__stremioDoctor.fetchJson(target);
-    }
-
-    function learnedRate(key) {
-        // What the doctor learned one server delivers, or null while it is still learning
-        try {
-            var saved = JSON.parse(localStorage.getItem(key) || 'null');
-            return saved && saved.n >= 30 ? saved.rate : null;
-        } catch (_e) {
-            return null;
-        }
-    }
-
     function learnedText() {
         // The speeds the ranking compares sources with, so a lowered 4K is explained
-        var tv = learnedRate('twk.tvRate');
-        var lan = learnedRate('twk.lanRate');
+        var tv = shared.learnedRate('twk.tvRate');
+        var lan = shared.learnedRate('twk.lanRate');
         return t('diag.learnedPair', { tv: tv ? mbps(tv) : t('diag.learning'), computer: lan ? mbps(lan) : t('diag.learning') });
     }
 
@@ -195,10 +147,10 @@
         // Fill the playback section from the media element
         var quality = video.getVideoPlaybackQuality ? video.getVideoPlaybackQuality() : null;
         var retry = window.__stremioRetryState || {};
-        var ahead = bufferAhead(video);
+        var ahead = shared.bufferAhead(video);
         var tone = ahead >= 20 ? 'good' : ahead >= 8 ? 'warn' : 'bad';
         setText('video', video.videoWidth ? video.videoWidth + '×' + video.videoHeight : t('diag.loading'));
-        setText('position', clock(video.currentTime) + ' / ' + clock(video.duration));
+        setText('position', shared.duration(video.currentTime) + ' / ' + shared.duration(video.duration));
         setText('buffer', ahead.toFixed(0) + ' s', tone);
         setBar('bufferBar', ahead / BUFFER_TARGET_S, tone);
         setText('frames', quality && quality.totalVideoFrames ? quality.droppedVideoFrames + ' / ' + quality.totalVideoFrames : t('diag.noVideoTracks'));
@@ -217,7 +169,7 @@
         var status = doctor.status || 'ok';
         var tone = status === 'ok' ? 'good' : status === 'attention' || status === 'loading' ? 'warn' : 'bad';
         var target = doctorConfig.targetBufferS || 120;
-        var player = doctor.playerBufferS !== undefined ? doctor.playerBufferS : bufferAhead(video);
+        var player = doctor.playerBufferS !== undefined ? doctor.playerBufferS : shared.bufferAhead(video);
         var total = doctor.totalBufferS !== undefined ? Math.max(doctor.totalBufferS, player) : player;
         setText('health', t('doctor.status.' + status), tone);
         var reasonParts = String(doctor.reason || '').split('|');
@@ -237,20 +189,20 @@
         if (busy) return;
         var video = document.querySelector('video');
         if (!video) {
-            chip.textContent = t('diag.noVideo');
+            view.tag.textContent = t('diag.noVideo');
             return;
         }
         var src = video.currentSrc || video.src || '';
         var hls = HLS_URL.exec(src);
         // An HLS conversion of a torrent still reports that torrent swarm and server
-        var torrent = window.__stremioDoctor.sourceTorrent(src);
+        var torrent = shared.sourceTorrent(src);
         var origin = torrent ? torrent[1] : hls ? hls[1] : null;
-        chip.textContent = hls ? (torrent ? t('diag.hlsTorrent') : t('diag.hls')) : torrent ? t('diag.torrent') : t('diag.directLink');
+        view.tag.textContent = hls ? (torrent ? t('diag.hlsTorrent') : t('diag.hls')) : torrent ? t('diag.torrent') : t('diag.directLink');
         sections['diag.torrent'].style.display = torrent ? '' : 'none';
         busy = true;
         Promise.all([
-            torrent ? fetchJson(torrent[1] + '/' + torrent[2] + '/' + torrent[3] + '/stats.json') : null,
-            fetchJson('/__tweaks/status')
+            torrent ? shared.fetchJson(torrent[1] + '/' + torrent[2] + '/' + torrent[3] + '/stats.json') : null,
+            shared.fetchJson('/__tweaks/status')
         ]).then(function (results) {
             busy = false;
             renderHealth(video, results[1]);
@@ -263,12 +215,11 @@
     function open() {
         // Show the panel with its slide-in transition and start polling
         return window.__twkI18n.refresh().then(function () {
-            if (!panel) createPanel();
+            if (!view) createPanel();
             refreshLabels();
             render();
-            requestAnimationFrame(function () { panel.classList.add('twk-visible'); });
+            view.show();
             timer = setInterval(render, config.refreshMs);
-            window.__twkPanels.opened('diag');
         });
     }
 
@@ -276,8 +227,7 @@
         // Stop polling and slide the panel out
         if (timer) clearInterval(timer);
         timer = null;
-        if (panel) panel.classList.remove('twk-visible');
-        window.__twkPanels.closed('diag');
+        if (view) view.hide();
     }
 
     function onRouteChange() {
@@ -289,7 +239,6 @@
     window.addEventListener('hashchange', onRouteChange);
     window.addEventListener('historyChange', onRouteChange);
 
-    window.__twkPanels.add('diag', close);
     window.__stremioDiag = {
         toggle: function () { return timer ? close() : open(); },
         close: close

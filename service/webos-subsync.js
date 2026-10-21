@@ -6,6 +6,7 @@
 // catch drift. Parameters come from STREMIO_TWEAKS.subtitles.
 (function () {
     var config = (window.STREMIO_TWEAKS || {}).subtitles || {};
+    var shared = window.__twkShared;
     var t = window.__twkI18n.t;
     var done = {};
     var retried = {};
@@ -13,13 +14,6 @@
     var playingSince = null;
     var busy = false;
     var warnedUnavailable = false;
-
-    function toast(text, hideAfterMs) {
-        // Reuse the recovery toast so every notice looks the same
-        if (!window.__stremioToast) return;
-        window.__stremioToast.show(text);
-        setTimeout(window.__stremioToast.hide, hideAfterMs);
-    }
 
     function playerState() {
         // Current props of the player video, exposed by the player patch
@@ -32,7 +26,7 @@
         // The external subtitle track currently shown, if any
         var id = state && state.selectedExtraSubtitlesTrackId;
         if (!id) return null;
-        return (state.extraSubtitlesTracks || []).filter(function (t) { return t.id === id; })[0] || null;
+        return (state.extraSubtitlesTracks || []).filter(function (track) { return track.id === id; })[0] || null;
     }
 
     function formatSeconds(ms) {
@@ -54,12 +48,12 @@
         window.__stremioSetSubtitlesDelay(result.offsetMs);
         window.__stremioSubSync = { offsetMs: result.offsetMs, track: track.id, at: Date.now() };
         console.info('[subsync] applied', result.offsetMs, 'ms to', track.id);
-        toast(t(result.on === 'tv' ? 'subsync.appliedTv' : 'subsync.appliedComputer', { offset: formatSeconds(result.offsetMs) }), 4000);
+        shared.notify(t(result.on === 'tv' ? 'subsync.appliedTv' : 'subsync.appliedComputer', { offset: formatSeconds(result.offsetMs) }), 4000);
     }
 
     function check() {
         // Run at most one measurement at a time, only on the player with an external subtitle
-        if (busy || config.autoSync === false || (location.hash || '').indexOf('#/player') !== 0 || !window.__stremioSetSubtitlesDelay) return;
+        if (busy || config.autoSync === false || !shared.onPlayer() || !window.__stremioSetSubtitlesDelay) return;
         var video = document.querySelector('video');
         var state = playerState();
         var track = selectedTrack(state);
@@ -76,7 +70,7 @@
         done[key] = true;
         busy = true;
         // The sync reads the audio from the original torrent file, even while the TV plays an HLS conversion of it
-        var torrent = window.__stremioDoctor.sourceTorrent(video.currentSrc);
+        var torrent = shared.sourceTorrent(video.currentSrc);
         var media = torrent ? torrent[0] : video.currentSrc;
         var query = 'media=' + encodeURIComponent(media) + '&sub=' + encodeURIComponent(track.url) + '&at=' + Math.floor(video.currentTime);
         // A job that never ends must not keep the measurement busy and a page connection taken forever
@@ -91,7 +85,7 @@
             busy = false;
             if (r.status === 503) {
                 // Without any way to measure the subtitle stays as chosen; tell the viewer once
-                if (!warnedUnavailable) toast(t('subsync.unavailable'), 5000);
+                if (!warnedUnavailable) shared.notify(t('subsync.unavailable'), 5000);
                 warnedUnavailable = true;
                 return;
             }
