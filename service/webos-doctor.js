@@ -243,6 +243,23 @@
             var list = candidates(results[0] || [], results[1], config.raceCandidates || 2);
             race = { videoId: videoId, list: list, best: null };
             list.forEach(function (next) { prepareOn(next, fraction); });
+            offerMirrors(results[0] || [], results[1], list);
+        });
+    }
+
+    function offerMirrors(ranked, current, list) {
+        // Torrents of the same release file download later parts in parallel; the service checks size and bytes before merging any
+        var settings = ((window.STREMIO_TWEAKS || {}).readAhead || {}).mirrors || {};
+        if (settings.enabled === false || !current || !current.infoHash) return;
+        var entry = ranked.filter(function (s) { return sameStream(s, current); })[0] || current;
+        var name = (entry.behaviorHints || {}).filename;
+        var height = resolutionOf(entry);
+        // Same file name first, then the race candidates of the same resolution, which are already starting anyway
+        var twins = ranked.filter(function (s) { return s.infoHash && !sameStream(s, entry) && name && (s.behaviorHints || {}).filename === name; });
+        var alike = list.filter(function (s) { return s.infoHash && height && resolutionOf(s) === height && twins.indexOf(s) === -1; });
+        twins.concat(alike).slice(0, settings.max || 2).forEach(function (s) {
+            console.info('[doctor] offering a mirror', s.infoHash);
+            fetchJson('/__tweaks/mirror?hash=' + entry.infoHash.toLowerCase() + '&idx=' + (entry.fileIdx || 0) + '&with=' + s.infoHash.toLowerCase() + '&widx=' + (s.fileIdx || 0));
         });
     }
 
