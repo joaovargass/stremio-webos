@@ -109,8 +109,8 @@
     }
 
     function fetchJson(target) {
-        // Fetch JSON and resolve null on any failure
-        return fetch(target).then(function (resp) { return resp.json(); }).catch(function () { return null; });
+        // Same time-limited fetch as the doctor, so a slow server never freezes the panel
+        return window.__stremioDoctor.fetchJson(target);
     }
 
     function learnedRate(key) {

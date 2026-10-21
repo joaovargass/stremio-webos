@@ -75,8 +75,16 @@
     }
 
     function fetchJson(target) {
-        // Fetch JSON and resolve null on any failure
-        return fetch(target).then(function (r) { return r.json(); }).catch(function () { return null; });
+        // Fetch JSON and resolve null on any failure; a server holding the request (a torrent without metadata) must not freeze the caller
+        var controller = new AbortController();
+        var timer = setTimeout(function () { controller.abort(); }, config.requestTimeoutMs || 4000);
+        return fetch(target, { signal: controller.signal })
+            .then(function (r) { return r.json(); })
+            .catch(function () { return null; })
+            .then(function (body) {
+                clearTimeout(timer);
+                return body;
+            });
     }
 
     function currentVideoId() {
@@ -498,6 +506,7 @@
         sameStream: sameStream,
         sourceTorrent: function (src) { return TORRENT_URL.exec(src) || hlsSourceTorrent(src); },
         heavyForTv: heavyForTv,
+        fetchJson: fetchJson,
         state: state
     };
 })();
