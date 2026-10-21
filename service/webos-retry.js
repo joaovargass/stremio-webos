@@ -33,10 +33,8 @@
     }
 
     function fetchStats(match) {
-        // Read peers and speed for the stalled file from the streaming server
-        return fetch(match[1] + '/' + match[2] + '/' + match[3] + '/stats.json')
-            .then(function (resp) { return resp.json(); })
-            .catch(function () { return null; });
+        // Peers and speed of the stalled file, time-limited: the server holds stats exactly for torrents without data, and the reload must not wait
+        return window.__stremioDoctor.fetchJson(match[1] + '/' + match[2] + '/' + match[3] + '/stats.json');
     }
 
     function describe(stats) {
