@@ -51,6 +51,9 @@
             ['sources.loadingHint', 'Dica "Demorando?" ao carregar'],
             ['restart.resumeHint', 'Aviso "Retomando de..."'],
             ['hints.firstRunToast', 'Aviso de novidades']
+        ] },
+        { title: 'Depuração', column: 1, items: [
+            ['debug.overlay', 'Mostrar o registro de depuração na tela']
         ] }
     ];
     var panel = null;

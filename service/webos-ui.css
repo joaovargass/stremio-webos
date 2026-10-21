@@ -306,6 +306,30 @@
     text-shadow: 0 0 0.06em #000000, 0 0 0.12em rgba(0, 0, 0, 0.9), 0 0.08em 0.24em rgba(0, 0, 0, 0.85) !important;
 }
 
+/* On-screen debug log: a corner box above the video, below every panel, never focusable */
+
+.twk-debug {
+    position: fixed;
+    left: 1.2vw;
+    bottom: 16vh;
+    width: 40vw;
+    padding: 0.8vh 0.8vw;
+    border-radius: 1vh;
+    background: rgba(0, 0, 0, 0.62);
+    color: rgba(255, 255, 255, 0.88);
+    font-family: Menlo, Consolas, monospace;
+    font-size: 1.35vh;
+    line-height: 1.35;
+    z-index: 2147483646;
+    pointer-events: none;
+}
+
+.twk-debug-line {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
 /* Loading hint */
 
 .twk-hint {

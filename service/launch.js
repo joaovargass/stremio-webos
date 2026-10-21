@@ -12,6 +12,9 @@ var Service = require('webos-service');
 var ReadAhead = require('./readahead');
 var subtitles = require('./subtitles');
 
+var logLines = [];
+var logSeq = 0;
+keepLogs();
 var tweaks = loadTweaks();
 var candidates = tweaks.servers.candidates;
 var transcoders = tweaks.servers.transcoders || [];
@@ -33,6 +36,25 @@ var lastScan = 0;
 var readAhead = new ReadAhead(tweaks.readAhead || { enabled: false });
 readAhead.mirrorsFor = mirrorsFor;
 var PROXY_LOOPBACK = /http(%3A|:)(%2F|\/)(%2F|\/)127\.0\.0\.1(%3A|:)8080/gi;
+
+function keepLogs() {
+    // Keep the latest service log lines in memory for the on-screen debug log
+    ['log', 'warn', 'error'].forEach(function(level) {
+        var original = console[level].bind(console);
+        console[level] = function() {
+            logLines.push({ n: ++logSeq, at: Date.now(), level: level, text: Array.prototype.map.call(arguments, String).join(' ') });
+            if (logLines.length > 300) logLines.shift();
+            original.apply(null, arguments);
+        };
+    });
+}
+
+function serveLogs(reqUrl, res) {
+    // Service log lines newer than the given sequence number
+    var since = parseInt(url.parse(reqUrl, true).query.since, 10) || 0;
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ last: logSeq, lines: logLines.filter(function(line) { return line.n > since; }) }));
+}
 
 function lanAddress() {
     // The address other LAN hosts use to reach the streaming server running on this TV
@@ -353,7 +375,9 @@ function serveSubtitles(req, res) {
         res.end(vtt);
     };
     if (cached) return send(cached.vtt);
+    var started = Date.now();
     convertSubtitles(subtitleTargets(from), function(vtt) {
+        console.log('subtitles', vtt ? 'converted ' + (vtt.split('-->').length - 1) + ' cues' : 'unavailable', 'in', Date.now() - started, 'ms from', from.slice(0, 80));
         if (vtt) subtitleCache = [{ from: from, vtt: vtt }].concat(subtitleCache).slice(0, 6);
         send(vtt);
     });
@@ -673,6 +697,7 @@ http.createServer(function(req, res) {
     if (urlPath === '/__tweaks/route') return serveRoute(req.url, res);
     if (urlPath === '/__tweaks/warm') return serveWarm(req.url, res);
     if (urlPath === '/__tweaks/mirror') return serveMirror(req.url, res);
+    if (urlPath === '/__tweaks/logs') return serveLogs(req.url, res);
     if (urlPath === '/subtitles.vtt' && (tweaks.subtitles || {}).convert !== false) return serveSubtitles(req, res);
     if (urlPath === '/__tweaks/subsync') return serveSubsync(req, res);
     if (urlPath === '/__tweaks/overrides' && req.method === 'POST') return serveOverrides(req, res);

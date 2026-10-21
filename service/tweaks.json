@@ -231,6 +231,11 @@
     "hints": {
         "firstRunToast": true
     },
+    "debug": {
+        "overlay": true,
+        "lines": 12,
+        "pollMs": 1000
+    },
     "subtitles": {
         "enabled": true,
         "autoPick": true,
