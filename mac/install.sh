@@ -94,9 +94,9 @@ for _ in $(seq 1 30); do
     sleep 1
 done
 
-echo "==> Applying the Fast torrent profile and disk cache"
+echo "==> Applying the Fast torrent profile (soft limit = hard limit, so the cache fills ahead) and disk cache"
 curl -fsS -X POST -H 'Content-Type: application/json' \
-    -d "{\"btDownloadSpeedHardLimit\":39321600,\"btDownloadSpeedSoftLimit\":4194304,\"btHandshakeTimeout\":20000,\"btMaxConnections\":200,\"btMinPeersForStable\":10,\"btRequestTimeout\":4000,\"cacheSize\":$CACHE_BYTES}" \
+    -d "{\"btDownloadSpeedHardLimit\":39321600,\"btDownloadSpeedSoftLimit\":39321600,\"btHandshakeTimeout\":20000,\"btMaxConnections\":200,\"btMinPeersForStable\":10,\"btRequestTimeout\":4000,\"cacheSize\":$CACHE_BYTES}" \
     "http://127.0.0.1:$STREMIO_PORT/settings"
 echo
 echo "Done: http://$(ipconfig getifaddr en0 2>/dev/null || echo '<mac-ip>'):$STREMIO_PORT/ (add it to service/tweaks.json servers.candidates)"
