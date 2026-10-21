@@ -204,10 +204,15 @@
         // Remember the playable streams in ranked order, and their video, for the source picker and the doctor
         var selected = state.selected || {};
         window.__stremioRankedFor = selected.streamPath ? selected.streamPath.id : null;
+        // Several addon instances list the same torrent; keep its best-ranked copy so a switch always changes the source
+        var seen = {};
         window.__stremioRankedStreams = groups.reduce(function (list, item) {
             var content = item.group.content && item.group.content.content;
             return Array.isArray(content) ? list.concat(content.filter(function (s) {
-                return s.deepLinks && s.deepLinks.player && (s.infoHash || s.url);
+                var key = s.infoHash ? s.infoHash.toLowerCase() + '/' + (s.fileIdx || 0) : s.url;
+                if (!s.deepLinks || !s.deepLinks.player || !key || seen[key]) return false;
+                seen[key] = true;
+                return true;
             })) : list;
         }, []);
         // Warm the recommended torrent only on the title page, where the click to play happens
