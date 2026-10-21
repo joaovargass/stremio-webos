@@ -5,6 +5,7 @@
 (function () {
     var config = window.STREMIO_TWEAKS || {};
     var prewarmed = {};
+    var lastRanking = null;
     var rules = compileRules(config.ranking);
 
     function compileRules(rank) {
@@ -177,6 +178,14 @@
             lanRate: learnedRate('twk.lanRate'),
             lan: (config.servers || {}).useLan !== false && window.__stremioLanAvailable === true
         };
+        // The title page polls the core many times a second; the same sources in the same context reuse the last ranking
+        var selected = state.selected || {};
+        var signature = JSON.stringify(context) + '|' + (selected.streamPath ? selected.streamPath.id : '') + '|' + state.streams.map(function (group) {
+            var content = group.content || {};
+            var list = content.type === 'Ready' && Array.isArray(content.content) ? content.content.map(function (s) { return s.infoHash || s.url || ''; }).join(',') : '';
+            return (group.addon && group.addon.transportUrl || '') + ':' + content.type + ':' + list;
+        }).join('|');
+        if (lastRanking && lastRanking.signature === signature) return finishRanking(state, lastRanking);
         var groups = state.streams.map(function (group) {
             var ready = group.content && group.content.type === 'Ready' && Array.isArray(group.content.content);
             if (!ready) return { group: group, best: -Infinity };
@@ -192,11 +201,10 @@
             return { group: Object.assign({}, group, { content: content }), best: scored.length ? scored[0].result.score : -Infinity };
         }).sort(function (a, b) { return b.best - a.best; });
         // Remember the playable streams in ranked order, and their video, for the source picker and the doctor
-        var selected = state.selected || {};
-        window.__stremioRankedFor = selected.streamPath ? selected.streamPath.id : null;
+        var rankedFor = selected.streamPath ? selected.streamPath.id : null;
         // Several addon instances list the same torrent; keep its best-ranked copy so a switch always changes the source
         var seen = {};
-        window.__stremioRankedStreams = groups.reduce(function (list, item) {
+        var rankedStreams = groups.reduce(function (list, item) {
             var content = item.group.content && item.group.content.content;
             return Array.isArray(content) ? list.concat(content.filter(function (s) {
                 var key = s.infoHash ? s.infoHash.toLowerCase() + '/' + (s.fileIdx || 0) : s.url;
@@ -205,16 +213,24 @@
                 return true;
             })) : list;
         }, []);
-        // Warm the recommended torrent only on the title page, where the click to play happens, on the Mac when the TV cannot sustain it
-        var recommended = window.__stremioRankedStreams[0];
-        if ((location.hash || '').indexOf('#/detail') === 0) prewarm(recommended, 0, startsOnLan(recommended));
         var top = groups[0];
         if (top && top.best > 0) {
             var first = top.group.content.content[0];
             top.group.content.content[0] = Object.assign({}, first, { description: rank.badge + '\n' + (first.description || '') });
         }
-        var ranked = Object.assign({}, state, { streams: groups.map(function (item) { return item.group; }) });
-        return simple.enabled ? simplify(ranked) : ranked;
+        lastRanking = { signature: signature, groups: groups.map(function (item) { return item.group; }), rankedFor: rankedFor, rankedStreams: rankedStreams };
+        return finishRanking(state, lastRanking);
+    }
+
+    function finishRanking(state, ranking) {
+        // Publish the ranked list for the picker and the doctor, warm the recommended source and build the state for the UI
+        window.__stremioRankedFor = ranking.rankedFor;
+        window.__stremioRankedStreams = ranking.rankedStreams;
+        // Warm the recommended torrent only on the title page, where the click to play happens, on the Mac when the TV cannot sustain it
+        var recommended = ranking.rankedStreams[0];
+        if ((location.hash || '').indexOf('#/detail') === 0) prewarm(recommended, 0, startsOnLan(recommended));
+        var ranked = Object.assign({}, state, { streams: ranking.groups });
+        return (config.simple || {}).enabled ? simplify(ranked) : ranked;
     }
 
     function summary(stream, compact) {
