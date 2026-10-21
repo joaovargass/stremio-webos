@@ -234,6 +234,7 @@
     "liveTest": {
         "enabled": true,
         "candidates": 3,
+        "maxTested": 6,
         "everyMs": 2000,
         "windowMs": 30000,
         "judgeAfterMs": 6000,
