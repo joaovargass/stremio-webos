@@ -1,11 +1,9 @@
 // Core-level tweaks: points the profile at the local proxy (which picks the
-// fastest streaming server), adds peer sources to torrents and ranks streams so
-// the most compatible and healthy one is listed first. All parameters come from
-// window.STREMIO_TWEAKS, loaded from tweaks.json.
+// fastest streaming server and adds peer sources to torrents), ranks streams so
+// the most compatible and healthy one is listed first and asks the service to
+// warm it. All parameters come from window.STREMIO_TWEAKS, loaded from tweaks.json.
 (function () {
     var config = window.STREMIO_TWEAKS || {};
-    var TORRENT_URL = /^(https?:\/\/[^/]+)\/([0-9a-f]{40})\/(\d+)/i;
-    var boostedHashes = {};
     var prewarmed = {};
     var rules = compileRules(config.ranking);
 
@@ -48,45 +46,14 @@
     function prewarm(stream, fraction, onLan) {
         // Start a torrent and fetch its bytes at a position (the start by default) so a later play begins at once; onLan warms it on the Mac
         var settings = config.prewarm || {};
-        var base = config.servers && config.servers.coreUrl;
         var key = stream && stream.infoHash + '@' + Math.round((fraction || 0) * 100);
-        if (settings.enabled === false || !base || !stream || !stream.infoHash || prewarmed[key]) return;
+        if (settings.enabled === false || !stream || !stream.infoHash || prewarmed[key]) return;
         prewarmed[key] = true;
-        var url = base.replace(/\/$/, '') + '/' + stream.infoHash + '/' + (stream.fileIdx || 0);
-        var bytes = settings.warmBytes || 1048576;
-        // The route comes first, so the torrent starts and warms where it will later play
-        var routed = onLan ? fetch('/__tweaks/route?hash=' + stream.infoHash.toLowerCase() + '&to=remote').catch(function () {}) : Promise.resolve();
-        routed.then(function () {
-            return boostTorrent(url);
-        }).then(function () {
-            // A position inside the file needs its size first; a one-byte read answers with it
-            if (!fraction) return 0;
-            return fetch(url, { headers: { Range: 'bytes=0-0' } }).then(function (resp) {
-                var total = /\/(\d+)$/.exec(resp.headers.get('Content-Range') || '');
-                return total ? Math.floor(parseInt(total[1], 10) * fraction) : 0;
-            });
-        }).then(function (from) {
-            return fetch(url, { headers: { Range: 'bytes=' + from + '-' + (from + bytes - 1) } });
-        }).then(function (resp) {
-            console.info('[tweaks] prewarmed', stream.infoHash, 'at', Math.round((fraction || 0) * 100) + '%', resp.status);
-            return resp.arrayBuffer();
+        var query = 'hash=' + stream.infoHash.toLowerCase() + '&idx=' + (stream.fileIdx || 0) + '&at=' + (fraction || 0) + (onLan ? '&lan=1' : '');
+        // The service answers at once and does the slow reads itself, so the page keeps its few connections for the player
+        fetch('/__tweaks/warm?' + query).then(function (resp) {
+            console.info('[tweaks] prewarm started', stream.infoHash, 'at', Math.round((fraction || 0) * 100) + '%', resp.status);
         }).catch(function (err) { console.warn('[tweaks] prewarm failed', err); });
-    }
-
-    function boostTorrent(url) {
-        // Re-create the torrent engine with extra trackers once per info hash
-        var match = TORRENT_URL.exec(url || '');
-        if (!match || boostedHashes[match[2]] || !config.trackers || (config.peerBoost || {}).enabled === false) return Promise.resolve();
-        boostedHashes[match[2]] = true;
-        var sources = config.trackers.map(function (t) { return 'tracker:' + t; }).concat(['dht:' + match[2]]);
-        var body = { torrent: { infoHash: match[2] }, peerSearch: Object.assign({ sources: sources }, config.peerSearch) };
-        return fetch(match[1] + '/' + match[2] + '/create', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
-        }).then(function (resp) {
-            console.info('[tweaks] peer sources added', match[2], resp.status);
-        }).catch(function (err) { console.warn('[tweaks] peer sources failed', err); });
     }
 
     function streamText(stream) {
@@ -291,11 +258,6 @@
             });
         };
     }
-
-    // Boost every torrent the media element starts loading
-    document.addEventListener('loadstart', function (e) {
-        if (e.target instanceof HTMLMediaElement) boostTorrent(e.target.currentSrc || e.target.src);
-    }, true);
 
     window.__stremioStreamBitrate = window.__stremioStreamBitrate || {};
     refreshLan();
