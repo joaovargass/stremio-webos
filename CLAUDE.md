@@ -42,7 +42,7 @@ service/              # webOS service
 patches/              # Patches applied to Vidaa frontend files during build (alphabetical order)
 
 mac/                  # Optional dedicated streaming server for a Mac on the same LAN
-  install.sh          # Installs the patched server, the sync service and launchd agents (idempotent)
+  install.sh          # Installs the patched server, the sync service and launchd agents (idempotent, restarts only changed agents)
   patch-server.py     # Makes server.js listen on STREMIO_PORT
   subsync.js          # Subtitle sync service (ffmpeg audio window + ffsubsync), port 11481
   devmode-keepalive.sh # Resets the 1000 h Dev Mode session daily
@@ -53,7 +53,7 @@ mac/                  # Optional dedicated streaming server for a Mac on the sam
 1. `make build` downloads the Vidaa frontend (pinned to a specific commit) and Stremio server, copies frontend files into `service/www/`, applies patches
 2. `make deploy` packages the IPK via `ares-package` and installs via `ares-install`
 3. On launch: `app/index.html` starts the server service via Luna, polls `:8080` with an `<img>` load, redirects when ready
-4. `service/launch.js` serves the Theater frontend on `:8080` and proxies all non-static requests to the first reachable server in `tweaks.json` `servers.candidates`, the TV's own `127.0.0.1:11470` first (probed in parallel every `recheckIntervalMs`, never switched while a video is being served). It starts the bundled `server.js` only when nothing already answers on `:11470` (the official app's service usually does), which saves RAM. When no configured LAN server answers it scans the /24 subnet for `servers.discover.port` and adopts what it finds. Routes:
+4. `service/launch.js` serves the Theater frontend on `:8080` and proxies all non-static requests to the first reachable server in `tweaks.json` `servers.candidates`, the TV's own `127.0.0.1:11470` first (probed in parallel every `recheckIntervalMs`, never switched while a video is being served; a server counts as down only after `downAfterFailures` missed probes in a row, so a busy LAN server keeps its videos). It starts the bundled `server.js` only when nothing already answers on `:11470` (the official app's service usually does), which saves RAM. When no configured LAN server answers it scans the /24 subnet for `servers.discover.port` and adopts what it finds. Routes:
    - `GET /__tweaks/status`: upstream, candidates, transcoder, sync server, LAN fallback, per-video routes, read-ahead state.
    - `GET /__tweaks/route?hash=<infohash>&to=remote|default`: serve one torrent from the LAN fallback server (used by the doctor when the TV swarm is too slow).
    - `POST /__tweaks/overrides`: on/off choices that live in the service (`servers.useLan`, `readAhead.enabled`).
@@ -136,4 +136,4 @@ make clean     # remove all build artifacts
 make ffmpeg    # optional: bundle static ffmpeg (needs ~100 MB free on the TV app partition)
 ```
 
-Optional Mac services (faster torrents for videos the TV cannot keep up with, 10 GB disk cache, HLS/audio conversion, subtitle sync): `./mac/install.sh`. The TV finds the Mac on port 11480 by itself; `servers.candidates` and `servers.transcoders` only seed the first try. A DHCP reservation for the Mac avoids the subnet scan.
+Optional Mac services (faster torrents for videos the TV cannot keep up with, 10 GB disk cache, HLS/audio conversion, subtitle sync): `./mac/install.sh` (running it again restarts only the agents whose files changed, so a video being served keeps playing). The TV finds the Mac on port 11480 by itself; `servers.candidates` and `servers.transcoders` only seed the first try. A DHCP reservation for the Mac avoids the subnet scan.
