@@ -58,7 +58,9 @@
         // Service lines arrive in order, numbered, so each is shown once
         fetch('/__tweaks/logs?since=' + serviceSeq).then(function (r) { return r.json(); }).then(function (body) {
             if (serviceSeq === 0) body.lines = body.lines.slice(-5);
-            body.lines.forEach(function (line) { add('SVC', line.level, line.text, line.at); });
+            // The bundled streaming server logs every request; only its errors and the proxy lines are worth a viewer's eye
+            var hide = new RegExp(config.hideService || '$^');
+            body.lines.forEach(function (line) { if (!hide.test(line.text)) add('SVC', line.level, line.text, line.at); });
             serviceSeq = body.last;
         }).catch(function () {}).then(function () { setTimeout(pollService, config.pollMs || 1000); });
     }
