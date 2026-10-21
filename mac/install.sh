@@ -73,6 +73,7 @@ cat > "$STAGE/$SERVER_LABEL.plist" <<EOF
     <dict>
         <key>STREMIO_PORT</key><string>$STREMIO_PORT</string>
         <key>NO_HTTPS_SERVER</key><string>1</string>
+        <key>CASTING_DISABLED</key><string>1</string>
         <key>NO_CORS</key><string>1</string>
         <key>APP_PATH</key><string>$DEST/data</string>
         <key>FFMPEG_BIN</key><string>$FFMPEG_DIR/ffmpeg</string>
