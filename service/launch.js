@@ -460,30 +460,39 @@ function isOwnConverter(address) {
     return parsed.protocol === 'http:' && isLocal(parsed) && parsed.port === proxyUrl.port && parsed.pathname === '/subtitles.vtt';
 }
 
-function serveSubtitles(req, res) {
-    // Convert an external subtitle to clean WebVTT on the TV, keeping the last few for player reloads
-    var from = String(url.parse(req.url, true).query.from || '');
-    // A track the page already pointed at this converter is read from its original address once
+function originalSubtitle(address) {
+    // A track the page already pointed at this converter is read from its original address
+    var from = String(address || '');
     while (isOwnConverter(from)) from = String(url.parse(from, true).query.from || '');
+    return from;
+}
+
+function subtitleVtt(from, done) {
+    // Clean WebVTT of an external subtitle, converted once and kept among the last few for player reloads and the sync
+    var cached = subtitleCache.filter(function(entry) { return entry.from === from; })[0];
+    if (cached) return done(cached.vtt);
+    var started = Date.now();
+    convertSubtitles(subtitleTargets(from), function(vtt) {
+        console.log('subtitles', vtt ? 'converted ' + (vtt.split('-->').length - 1) + ' cues' : 'unavailable', 'in', Date.now() - started, 'ms from', from.slice(0, 80));
+        if (vtt) subtitleCache = [{ from: from, vtt: vtt }].concat(subtitleCache).slice(0, 6);
+        done(vtt);
+    });
+}
+
+function serveSubtitles(req, res) {
+    // Convert an external subtitle to clean WebVTT on the TV
+    var from = originalSubtitle(url.parse(req.url, true).query.from);
     if (!/^https?:\/\//i.test(from)) {
         res.writeHead(400);
         return res.end();
     }
-    var cached = subtitleCache.filter(function(entry) { return entry.from === from; })[0];
-    var send = function(vtt) {
+    subtitleVtt(from, function(vtt) {
         if (!vtt) {
             res.writeHead(502, { 'Content-Type': 'application/json' });
             return res.end(JSON.stringify({ error: 'subtitle unavailable or unreadable' }));
         }
         res.writeHead(200, { 'Content-Type': 'text/vtt; charset=utf-8' });
         res.end(vtt);
-    };
-    if (cached) return send(cached.vtt);
-    var started = Date.now();
-    convertSubtitles(subtitleTargets(from), function(vtt) {
-        console.log('subtitles', vtt ? 'converted ' + (vtt.split('-->').length - 1) + ' cues' : 'unavailable', 'in', Date.now() - started, 'ms from', from.slice(0, 80));
-        if (vtt) subtitleCache = [{ from: from, vtt: vtt }].concat(subtitleCache).slice(0, 6);
-        send(vtt);
     });
 }
 
