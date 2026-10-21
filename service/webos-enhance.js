@@ -163,6 +163,9 @@
         var size = sizeBytes(text);
         var bitrate = size && ctx.runtimeS ? size / ctx.runtimeS : null;
         if (bitrate && stream.infoHash) window.__stremioStreamBitrate[stream.infoHash] = bitrate;
+        // Preferred quality: a cap above which sources lose, and a bonus for the exact target
+        if (ctx.targetRes && resolution > ctx.targetRes) score -= 150;
+        if (ctx.targetRes && resolution === ctx.targetRes) score += 15;
         var over = rank.overTvSpeed;
         if (over && bitrate && ctx.tvRate && !ctx.lan && bitrate > ctx.tvRate * over.margin) {
             score -= over.penalty;
@@ -177,7 +180,9 @@
         if (!rules || !rank.enabled || !state || !Array.isArray(state.streams)) return state;
         // What the TV can sustain on its own decides how heavy sources are scored
         var meta = state.metaItem && state.metaItem.content && state.metaItem.content.content;
+        var simple = config.simple || {};
         var context = {
+            targetRes: simple.quality && simple.quality !== 'best' ? parseInt(simple.quality, 10) : null,
             runtimeS: runtimeSeconds(meta && meta.runtime),
             tvRate: tvRate(),
             lan: (config.servers || {}).useLan !== false && window.__stremioLanAvailable === true
@@ -212,7 +217,37 @@
             var first = top.group.content.content[0];
             top.group.content.content[0] = Object.assign({}, first, { description: rank.badge + '\n' + (first.description || '') });
         }
-        return Object.assign({}, state, { streams: groups.map(function (item) { return item.group; }) });
+        var ranked = Object.assign({}, state, { streams: groups.map(function (item) { return item.group; }) });
+        return simple.enabled ? simplify(ranked) : ranked;
+    }
+
+    function summary(stream) {
+        // One clean line: resolution, audio, size and seeders
+        var text = streamText(stream);
+        var resolution = parseResolution(text);
+        var audio = /atmos/.test(text) ? 'Atmos' : /truehd/.test(text) ? 'TrueHD' : /dts/.test(text) ? 'DTS' : /ddp|dd\+|eac3|e-ac-3/.test(text) ? 'Dolby Digital Plus' : /\bac3\b|\bdd\b|dd5/.test(text) ? 'Dolby Digital' : /aac/.test(text) ? 'AAC' : '';
+        var channels = /7\.1/.test(text) ? '7.1' : /5\.1|6ch/.test(text) ? '5.1' : '';
+        var size = /💾\s*([\d.]+\s*[tgm]b)/i.exec(text);
+        var seeds = parseSeeds(text);
+        return [resolution === 2160 ? '4K' : resolution ? resolution + 'p' : '', [audio, channels].filter(Boolean).join(' '), size ? size[1].toUpperCase() : '', seeds !== null ? seeds + ' seeds' : '']
+            .filter(Boolean).join(' · ');
+    }
+
+    function simplify(state) {
+        // Simple mode: one "Watch" entry with the best source; the full list stays on the green key
+        var best = (window.__stremioRankedStreams || [])[0];
+        var simple = config.simple || {};
+        if (!best) return state;
+        var home = state.streams.filter(function (group) {
+            return group.content && group.content.type === 'Ready' && group.content.content.some(function (s) { return s.deepLinks === best.deepLinks; });
+        })[0];
+        if (!home) return state;
+        var entry = Object.assign({}, best, {
+            name: simple.playLabel || 'Assistir',
+            title: summary(best),
+            description: summary(best) + (simple.moreHint ? '\n' + simple.moreHint : '')
+        });
+        return Object.assign({}, state, { streams: [Object.assign({}, home, { content: Object.assign({}, home.content, { content: [entry] }) })] });
     }
 
     function wrapGetState(core) {
@@ -241,5 +276,5 @@
         syncServer(core);
     });
 
-    window.__stremioTweaks = { scoreStream: scoreStream, rankMetaDetails: rankMetaDetails };
+    window.__stremioTweaks = { scoreStream: scoreStream, rankMetaDetails: rankMetaDetails, summary: summary };
 })();

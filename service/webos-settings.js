@@ -1,12 +1,18 @@
 // Settings panel with an on/off switch for every tweak added on top of the original
-// app. Choices are saved on the TV (localStorage "twk.overrides"), applied over
-// tweaks.json by index.html at start and shared with the service. Opens with a
-// remote colour key; closing after a change reloads the app to apply it.
+// app, plus choice rows (OK cycles the values). Choices are saved on the TV
+// (localStorage "twk.overrides"), applied over tweaks.json by index.html at start
+// and shared with the service. Opens with a remote colour key; closing after a
+// change reloads the app to apply it.
 (function () {
     var config = (window.STREMIO_TWEAKS || {}).settings || {};
     var STORAGE_KEY = 'twk.overrides';
     var KEYS = { up: 38, down: 40, left: 37, right: 39, enter: 13, back: 461, escape: 27 };
+    var QUALITY_LABELS = { best: 'Melhor (até 4K)', '2160p': '4K', '1080p': '1080p', '720p': '720p' };
     var GROUPS = [
+        { title: 'Modo simples', column: 0, items: [
+            ['simple.enabled', 'Um botão Assistir, sem lista de addons'],
+            ['simple.quality', 'Qualidade preferida', ['best', '2160p', '1080p', '720p'], QUALITY_LABELS]
+        ] },
         { title: 'Fontes', column: 0, items: [
             ['ranking.enabled', 'Ordenar fontes e marcar a recomendada'],
             ['prewarm.enabled', 'Pré-carregar a fonte recomendada'],
@@ -19,7 +25,7 @@
             ['stallRetry.enabled', 'Retomar quando o torrent trava'],
             ['hlsFallback.enabled', 'Converter áudio ou vídeo incompatível (Mac)']
         ] },
-        { title: 'Legendas', column: 0, items: [
+        { title: 'Legendas', column: 1, items: [
             ['subtitles.enabled', 'Central de legendas'],
             ['subtitles.autoPick', 'Escolher legenda automaticamente'],
             ['subtitles.openSubtitles', 'Buscar no OpenSubtitles'],
@@ -27,7 +33,7 @@
             ['subtitles.netflixStyle', 'Legendas no estilo Netflix'],
             ['subtitles.autoSync', 'Sincronizar legendas externas']
         ] },
-        { title: 'TV e rede', column: 1, items: [
+        { title: 'TV e rede', column: 0, items: [
             ['readAhead.enabled', 'Buffer extra na memória da TV'],
             ['servers.useLan', 'Usar o servidor do Mac quando a TV não der conta'],
             ['doctor.startOnLanWhenHeavy', 'Começar pelo Mac se a fonte for pesada para a TV']
@@ -56,10 +62,11 @@
         try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch (_e) { return {}; }
     }
 
-    function current(key) {
+    function current(key, options) {
         // Effective value: tweaks.json with the saved choices already applied by index.html
         var parts = key.split('.');
         var section = (window.STREMIO_TWEAKS || {})[parts[0]] || {};
+        if (options) return options.indexOf(section[parts[1]]) !== -1 ? section[parts[1]] : options[0];
         return section[parts[1]] !== false;
     }
 
@@ -79,7 +86,7 @@
                     var row = box.appendChild(element('div', 'twk-set-row'));
                     row.appendChild(element('span', 'twk-set-label', item[1]));
                     var value = row.appendChild(element('span', 'twk-set-switch'));
-                    rows.push({ key: item[0], row: row, value: value, on: current(item[0]), column: column });
+                    rows.push({ key: item[0], row: row, value: value, on: current(item[0], item[2]), options: item[2], labels: item[3], column: column });
                 });
             });
         });
@@ -89,8 +96,13 @@
     function paint() {
         // Show each switch state and the focused row
         rows.forEach(function (entry, i) {
-            entry.value.textContent = entry.on ? 'Ligado' : 'Desligado';
-            entry.value.className = 'twk-set-switch ' + (entry.on ? 'twk-good' : 'twk-bad');
+            if (entry.options) {
+                entry.value.textContent = entry.labels[entry.on] || entry.on;
+                entry.value.className = 'twk-set-switch twk-good';
+            } else {
+                entry.value.textContent = entry.on ? 'Ligado' : 'Desligado';
+                entry.value.className = 'twk-set-switch ' + (entry.on ? 'twk-good' : 'twk-bad');
+            }
             entry.row.classList.toggle('twk-src-focus', i === focus);
         });
     }
@@ -105,9 +117,9 @@
     }
 
     function toggleFocused() {
-        // Flip the focused switch and save it on the TV
+        // Flip the focused switch, or move a choice row to its next value, and save it on the TV
         var entry = rows[focus];
-        entry.on = !entry.on;
+        entry.on = entry.options ? entry.options[(entry.options.indexOf(entry.on) + 1) % entry.options.length] : !entry.on;
         var overrides = readOverrides();
         overrides[entry.key] = entry.on;
         try { localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides)); } catch (_e) {}

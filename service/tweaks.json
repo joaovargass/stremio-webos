@@ -116,6 +116,19 @@
             "label": "acima da velocidade da TV"
         }
     },
+    "simple": {
+        "enabled": true,
+        "quality": "best",
+        "qualities": [
+            "best",
+            "2160p",
+            "1080p",
+            "720p"
+        ],
+        "playLabel": "Assistir",
+        "moreHint": "Outras fontes: botão verde",
+        "subtitleChoices": 3
+    },
     "diagnostics": {
         "refreshMs": 1000
     },
@@ -181,6 +194,7 @@
         "syncEverySlotS": 600,
         "syncMinOffsetMs": 300,
         "syncAfterPlayingS": 20,
-        "syncMinConfidence": 0.5
+        "syncMinConfidence": 0.5,
+        "cycleKey": 403
     }
 }
