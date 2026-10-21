@@ -6,6 +6,7 @@ var dgram = require('dgram');
 var dns = require('dns');
 var http = require('http');
 var https = require('https');
+var net = require('net');
 var fs = require('fs');
 var os = require('os');
 var path = require('path');
@@ -1078,18 +1079,43 @@ function serveDeviceInfo(res) {
     res.end(JSON.stringify({ availableHardwareAccelerations: false }));
 }
 
-function serveStatus(res) {
-    // Report the selected upstream for the diagnostics panel
+function processHealth() {
+    // Descriptors by kind and live handles by type of this process, which also runs the bundled torrent server
+    var fds = { total: 0 };
+    try {
+        fs.readdirSync('/proc/self/fd').forEach(function(fd) {
+            var target = '';
+            try { target = fs.readlinkSync('/proc/self/fd/' + fd); } catch (_) {}
+            var kind = (/^(socket|pipe|anon_inode)/.exec(target) || ['file'])[0];
+            fds[kind] = (fds[kind] || 0) + 1;
+            fds.total++;
+        });
+    } catch (err) {
+        fds = { error: err.code };
+    }
+    var handles = {};
+    // Node keeps no public list of open handles; the internal one is enough for counting by type
+    (process._getActiveHandles ? process._getActiveHandles() : []).forEach(function(h) {
+        var type = h instanceof dgram.Socket ? 'udp' : h instanceof net.Socket ? 'tcp' : h && h.constructor ? h.constructor.name : 'unknown';
+        handles[type] = (handles[type] || 0) + 1;
+    });
+    return { uptimeS: Math.round(process.uptime()), rssMb: Math.round(process.memoryUsage().rss / 1048576), fds: fds, handles: handles };
+}
+
+function serveStatus(reqUrl, res) {
+    // Report the selected upstream for the diagnostics panel, and the process health when asked
     res.writeHead(200, { 'Content-Type': 'application/json' });
     var transcoder = pickTranscoder(upstream);
     var subsync = subsyncServer(upstream);
-    res.end(JSON.stringify({ upstream: url.format(upstream), candidates: serverStatus, transcoder: transcoder ? url.format(transcoder) : null, subsync: subsync ? url.format(subsync) : null, fallback: remoteFallback(), routes: routes, activeStreams: activeStreams, readAhead: readAhead.status(), answerCache: { enabled: answerSettings.enabled !== false, meta: metaAnswers.status(), hlsStart: hlsStartAnswers.status() }, mirrors: Object.keys(mirrors).reduce(function(all, p) { all[p] = mirrors[p].map(function(m) { return m.path + '@' + m.server.host; }); return all; }, {}) }));
+    var status = { upstream: url.format(upstream), candidates: serverStatus, transcoder: transcoder ? url.format(transcoder) : null, subsync: subsync ? url.format(subsync) : null, fallback: remoteFallback(), routes: routes, activeStreams: activeStreams, readAhead: readAhead.status(), answerCache: { enabled: answerSettings.enabled !== false, meta: metaAnswers.status(), hlsStart: hlsStartAnswers.status() }, mirrors: Object.keys(mirrors).reduce(function(all, p) { all[p] = mirrors[p].map(function(m) { return m.path + '@' + m.server.host; }); return all; }, {}) };
+    if (url.parse(reqUrl, true).query.health) status.health = processHealth();
+    res.end(JSON.stringify(status));
 }
 
 // Single server, reachable from this TV only since its routes change settings and read logs: tweaks routes, static files, then the streaming proxy
 http.createServer(function(req, res) {
     var urlPath = req.url.split('?')[0];
-    if (urlPath === '/__tweaks/status') return serveStatus(res);
+    if (urlPath === '/__tweaks/status') return serveStatus(req.url, res);
     if (urlPath === '/__tweaks/route') return serveRoute(req.url, res);
     if (urlPath === '/__tweaks/warm') return serveWarm(req.url, res);
     if (urlPath === '/__tweaks/mirror') return serveMirror(req.url, res);
