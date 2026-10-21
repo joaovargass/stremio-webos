@@ -1,5 +1,5 @@
 // Automatic subtitle sync: while an external subtitle is showing and the video plays,
-// asks the LAN sync service (through the proxy) how far the cues are from the voices
+// asks the service (measured on the TV, the LAN sync service only when the TV is unsure) how far the cues are from the voices
 // around the playback position and applies that delay through the player, the same way
 // the manual delay control does. Release-matched subtitles are skipped, a delay the
 // viewer set by hand is never overridden, and every ten-minute slot is checked once to
@@ -53,7 +53,7 @@
         window.__stremioSetSubtitlesDelay(result.offsetMs);
         window.__stremioSubSync = { offsetMs: result.offsetMs, track: track.id, at: Date.now() };
         console.info('[subsync] applied', result.offsetMs, 'ms to', track.id);
-        toast('Legenda sincronizada pelo Mac (' + formatSeconds(result.offsetMs) + ')', 4000);
+        toast('Legenda sincronizada ' + (result.on === 'tv' ? 'na TV' : 'pelo Mac') + ' (' + formatSeconds(result.offsetMs) + ')', 4000);
     }
 
     function check() {
@@ -78,19 +78,19 @@
         var torrent = window.__stremioDoctor.sourceTorrent(video.currentSrc);
         var media = torrent ? torrent[0] : video.currentSrc;
         var query = 'media=' + encodeURIComponent(media) + '&sub=' + encodeURIComponent(track.url) + '&at=' + Math.floor(video.currentTime);
-        // A Mac job that never ends must not keep the measurement busy and a page connection taken forever
+        // A job that never ends must not keep the measurement busy and a page connection taken forever
         var controller = new AbortController();
         var timer = setTimeout(function () { controller.abort(); }, config.syncTimeoutMs || 600000);
         fetch('/__tweaks/subsync?' + query, { signal: controller.signal }).then(function (resp) {
             clearTimeout(timer);
-            // No sync server (503) and a sync server that does not answer (502) both mean the Mac service is missing
+            // No way to measure (503: TV sync off and no Mac) and a Mac that does not answer (502) both mean no sync for now
             if (resp.status === 502 || resp.status === 503) return { status: 503, body: null };
             return resp.json().then(function (body) { return { status: resp.status, body: body }; });
         }).then(function (r) {
             busy = false;
             if (r.status === 503) {
-                // Without the Mac the subtitle stays as chosen; tell the viewer once
-                if (!warnedUnavailable) toast('Sincronização automática de legenda precisa do Mac ligado', 5000);
+                // Without any way to measure the subtitle stays as chosen; tell the viewer once
+                if (!warnedUnavailable) toast('Sincronização automática de legenda indisponível', 5000);
                 warnedUnavailable = true;
                 return;
             }
