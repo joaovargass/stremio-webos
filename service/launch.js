@@ -43,7 +43,8 @@ var discovered = {};
 var serverInfo = {};
 var readAhead = new ReadAhead(tweaks.readAhead || { enabled: false });
 readAhead.mirrorsFor = mirrorsFor;
-var PROXY_LOOPBACK = /http(%3A|:)(%2F|\/)(%2F|\/)127\.0\.0\.1(%3A|:)8080/gi;
+var proxyUrl = url.parse(tweaks.servers.coreUrl);
+var PROXY_LOOPBACK = new RegExp('http(%3A|:)(%2F|\\/)(%2F|\\/)' + proxyUrl.hostname.replace(/\./g, '\\.') + '(%3A|:)' + proxyUrl.port, 'gi');
 
 function keepLogs() {
     // Keep the latest service log lines in memory for the on-screen debug log
@@ -418,11 +419,17 @@ function convertSubtitles(targets, done) {
     });
 }
 
+function isOwnConverter(address) {
+    // A subtitle address that already points at this converter, by loopback name or address
+    var parsed = url.parse(address);
+    return parsed.protocol === 'http:' && isLocal(parsed) && parsed.port === proxyUrl.port && parsed.pathname === '/subtitles.vtt';
+}
+
 function serveSubtitles(req, res) {
     // Convert an external subtitle to clean WebVTT on the TV, keeping the last few for player reloads
     var from = String(url.parse(req.url, true).query.from || '');
     // A track the page already pointed at this converter is read from its original address once
-    while (/^http:\/\/(127\.0\.0\.1|localhost):8080\/subtitles\.vtt\?/.test(from)) from = String(url.parse(from, true).query.from || '');
+    while (isOwnConverter(from)) from = String(url.parse(from, true).query.from || '');
     if (!/^https?:\/\//i.test(from)) {
         res.writeHead(400);
         return res.end();
@@ -482,7 +489,7 @@ function loadTweaks() {
         return JSON.parse(fs.readFileSync(path.join(__dirname, 'tweaks.json'), 'utf8'));
     } catch (err) {
         console.error('tweaks.json unreadable, using local server only', err.message);
-        return { servers: { candidates: ['http://127.0.0.1:11470/'], probePath: 'stats.json', probeTimeoutMs: 10000, recheckIntervalMs: 0 } };
+        return { servers: { coreUrl: 'http://127.0.0.1:8080/', candidates: ['http://127.0.0.1:11470/'], probePath: 'stats.json', probeTimeoutMs: 10000, recheckIntervalMs: 0 } };
     }
 }
 
@@ -895,7 +902,7 @@ function serveStatus(res) {
     res.end(JSON.stringify({ upstream: url.format(upstream), candidates: serverStatus, transcoder: transcoder ? url.format(transcoder) : null, subsync: subsync ? url.format(subsync) : null, fallback: remoteFallback(), routes: routes, activeStreams: activeStreams, readAhead: readAhead.status(), mirrors: Object.keys(mirrors).reduce(function(all, p) { all[p] = mirrors[p].map(function(m) { return m.path + '@' + m.server.host; }); return all; }, {}) }));
 }
 
-// Single server: tweaks status and routes, static files, then proxy to streaming server
+// Single server, reachable from this TV only since its routes change settings and read logs: tweaks routes, static files, then the streaming proxy
 http.createServer(function(req, res) {
     var urlPath = req.url.split('?')[0];
     if (urlPath === '/__tweaks/status') return serveStatus(res);
@@ -909,7 +916,7 @@ http.createServer(function(req, res) {
     if (urlPath === '/__tweaks/subsync') return serveSubsync(req, res);
     if (urlPath === '/__tweaks/overrides' && req.method === 'POST') return serveOverrides(req, res);
     serveStatic(urlPath, res, function() { proxyToStreaming(req, res); });
-}).listen(8080, function() {
+}).listen(proxyUrl.port, proxyUrl.hostname, function() {
     ready = true;
     // Respond to any start calls that arrived before the server was ready
     pendingMessages.forEach(function(msg) { msg.respond({ ready: true }); });
