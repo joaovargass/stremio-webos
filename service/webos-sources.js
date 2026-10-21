@@ -209,6 +209,10 @@
             var video = document.querySelector('video');
             if (!video) return;
             video.currentTime = 0;
+            // The saved progress must start over too, or the next reload or source switch jumps back to it
+            var parts = hash.split('/');
+            var playerMeta = decodeURIComponent(parts[parts.length - 2] || '');
+            if (playerMeta && window.core) Promise.resolve(window.core.dispatch({ action: 'Ctx', args: { action: 'RewindLibraryItem', args: playerMeta } }, 'ctx')).catch(function () {});
             notice('Recomeçando do início');
             return;
         }
