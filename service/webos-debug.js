@@ -42,12 +42,19 @@
         });
     }
 
+    function describe(value) {
+        // Objects read as their content, never as [object Object]; circular ones fall back to their type
+        if (value instanceof Error) return value.name + ': ' + value.message;
+        if (!value || typeof value !== 'object') return String(value);
+        try { return JSON.stringify(value); } catch (_e) { return Object.prototype.toString.call(value); }
+    }
+
     function wrapConsole() {
         // Tweak logs start with a [tag]; errors from anywhere are kept too
         ['info', 'log', 'warn', 'error'].forEach(function (level) {
             var original = console[level].bind(console);
             console[level] = function () {
-                var text = Array.prototype.map.call(arguments, function (a) { return a instanceof Error ? a.message : typeof a === 'object' ? JSON.stringify(a) : String(a); }).join(' ');
+                var text = Array.prototype.map.call(arguments, describe).join(' ');
                 if (level === 'error' || text.charAt(0) === '[') add('TV', level, text);
                 original.apply(null, arguments);
             };

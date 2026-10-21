@@ -8,6 +8,7 @@ var fs = require('fs');
 var os = require('os');
 var path = require('path');
 var url = require('url');
+var util = require('util');
 var Service = require('webos-service');
 var ReadAhead = require('./readahead');
 var subtitles = require('./subtitles');
@@ -42,7 +43,8 @@ function keepLogs() {
     ['log', 'warn', 'error'].forEach(function(level) {
         var original = console[level].bind(console);
         console[level] = function() {
-            logLines.push({ n: ++logSeq, at: Date.now(), level: level, text: Array.prototype.map.call(arguments, String).join(' ') });
+            // Formatted like the console itself, so objects and errors read as their content
+            logLines.push({ n: ++logSeq, at: Date.now(), level: level, text: util.format.apply(util, arguments) });
             if (logLines.length > 300) logLines.shift();
             original.apply(null, arguments);
         };
