@@ -10,7 +10,7 @@
     var retryConfig = config.stallRetry || { maxRetries: 10, retryDelayMs: 3000 };
     var hlsConfig = config.hlsFallback || { enabled: false };
     var TORRENT_URL = /^(https?:\/\/[^/]+)\/([0-9a-f]{40})\/(\d+)/i;
-    var state = { url: null, retries: 0, hlsUrl: null };
+    var state = { url: null, retries: 0, hlsUrl: null, forced: false };
     var overlay = null;
     var overlayText = null;
 
@@ -58,9 +58,10 @@
         }).catch(function () { return null; });
     }
 
-    function buildHlsUrl(server, mediaUrl) {
-        // Ask the server to remux into codecs the webOS pipeline accepts
+    function buildHlsUrl(server, mediaUrl, force) {
+        // Ask the server to remux into codecs the webOS pipeline accepts, or to re-encode the picture when a remux was rejected too
         var params = new URLSearchParams([['mediaURL', mediaUrl]]);
+        if (force) params.set('forceTranscoding', '1');
         hlsConfig.videoCodecs.forEach(function (codec) { params.append('videoCodecs', codec); });
         hlsConfig.audioCodecs.forEach(function (codec) { params.append('audioCodecs', codec); });
         params.set('maxAudioChannels', String(hlsConfig.maxAudioChannels));
@@ -80,16 +81,17 @@
         }, delayMs);
     }
 
-    function switchToHls(video, stream, resumeAt, message) {
-        // Replace a rejected source with an HLS remux from the streaming server
+    function switchToHls(video, stream, resumeAt, message, force) {
+        // Replace a rejected source with an HLS remux from the streaming server, re-encoded when asked
         var currentSrc = video.getAttribute('src');
         var torrent = TORRENT_URL.exec(stream.url);
         var serverPromise = torrent ? Promise.resolve(torrent[1] + '/') : activeServer();
         showOverlay(message || 'Formato não suportado direto, convertendo no servidor...');
         serverPromise.then(function (server) {
             if (!server) return;
-            state.hlsUrl = buildHlsUrl(server, stream.url);
-            console.warn('[stall-retry] switching to HLS', state.hlsUrl);
+            state.hlsUrl = buildHlsUrl(server, stream.url, force);
+            state.forced = !!force;
+            console.warn('[stall-retry] switching to HLS', force ? '(re-encoding the picture)' : '', state.hlsUrl);
             reload(video, state.hlsUrl, resumeAt, currentSrc, 0);
         });
     }
@@ -194,6 +196,7 @@
             state.url = stream.url;
             state.retries = 0;
             state.hlsUrl = null;
+            state.forced = false;
         }
         var code = video.error ? video.error.code : null;
         var resumeAt = video.__lastTime || 0;
@@ -212,6 +215,11 @@
         // A rejected format gets one HLS attempt before the error is shown
         if (hlsConfig.enabled && !onHls && !starved && canConvert()) {
             switchToHls(video, stream, resumeAt);
+            return true;
+        }
+        // A remux the TV rejected as well carries a picture format it cannot decode (10-bit H.264, for one): re-encode it once
+        if (hlsConfig.enabled && onHls && !state.forced && !starved && canConvert()) {
+            switchToHls(video, stream, resumeAt, 'Vídeo incompatível com a TV, convertendo a imagem no servidor...', true);
             return true;
         }
         // Out of options for this source: let the doctor move to the next ranked one
