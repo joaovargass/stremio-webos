@@ -232,7 +232,7 @@
         stalledSince = playing && !loading && !video.seeking && !advancing && video.readyState < 3 ? stalledSince || now : null;
         var slow = !!stats && needed > 0 && speed < needed * 0.9;
         var low = state.totalBufferS < (config.minBufferS || 10);
-        describe(slow, low, needed);
+        describe(slow, low, needed, !!hash);
         // A short freeze only earns a hint, never an action; only the hint shown here is hidden here
         var stalledMs = stalledSince ? now - stalledSince : 0;
         var wantHint = stalledMs > 10000;
@@ -252,7 +252,7 @@
         }
     }
 
-    function describe(slow, low, needed) {
+    function describe(slow, low, needed, torrent) {
         // Status shown in the diagnostics panel; slowness alone is reported, not acted on
         if (loadingSince) {
             state.status = 'carregando';
@@ -268,7 +268,7 @@
             state.reason = 'download abaixo do necessário, usando o buffer';
         } else {
             state.status = 'ok';
-            state.reason = needed ? 'download acompanha o vídeo' : 'sem dados de velocidade (link direto)';
+            state.reason = needed ? 'download acompanha o vídeo' : torrent ? 'sem dados do torrent ainda' : 'sem dados de velocidade (link direto)';
         }
         // Keep telling that nothing automatic is left while the problem lasts
         if (state.status !== 'ok' && state.exhausted[currentVideoId()]) state.reason += ', sem outra troca automática';
