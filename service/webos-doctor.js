@@ -168,10 +168,7 @@
                 // Out of automatic attempts: tell the viewer once what can still help
                 if (!state.exhausted[videoId]) {
                     state.exhausted[videoId] = true;
-                    var lanOff = window.STREMIO_TWEAKS && window.STREMIO_TWEAKS.servers && window.STREMIO_TWEAKS.servers.useLan === false;
-                    // Name the missing Mac when the switch is on but no LAN server answers
-                    var help = lanOff ? 'Ligue "Usar o servidor do Mac" (tecla amarela) ou escolha' : state.lanFallback ? 'Escolha' : 'Ligue o Mac ou escolha';
-                    toast('Nenhuma fonte rápida o bastante agora. ' + help + ' outra fonte (tecla verde)', 9000);
+                    explainExhausted(videoId);
                 }
                 return false;
             }
@@ -191,6 +188,28 @@
             });
         });
         return true;
+    }
+
+    function explainExhausted(videoId) {
+        // Out of automatic attempts: when no tried torrent reached a single peer the network is the cause, and a direct link still plays
+        Promise.all([rankedStreams(), currentStream()]).then(function (results) {
+            var tried = (state.tried[videoId] || []).concat(results[1] ? [results[1]] : []).filter(function (s) { return s && s.infoHash; });
+            return Promise.all(tried.map(function (s) {
+                return fetchJson('/' + s.infoHash.toLowerCase() + '/' + (s.fileIdx || 0) + '/stats.json');
+            })).then(function (stats) {
+                var noPeers = tried.length >= 2 && stats.every(function (st) { return !st || !(st.peers > 0); });
+                if (!noPeers) {
+                    var lanOff = window.STREMIO_TWEAKS && window.STREMIO_TWEAKS.servers && window.STREMIO_TWEAKS.servers.useLan === false;
+                    // Name the missing Mac when the switch is on but no LAN server answers
+                    var help = lanOff ? 'Ligue "Usar o servidor do Mac" (tecla amarela) ou escolha' : state.lanFallback ? 'Escolha' : 'Ligue o Mac ou escolha';
+                    return toast('Nenhuma fonte rápida o bastante agora. ' + help + ' outra fonte (tecla verde)', 9000);
+                }
+                var direct = (results[0] || []).filter(function (s) { return !s.infoHash && typeof s.url === 'string'; })[0];
+                console.warn('[doctor] no tried torrent reached a peer', tried.length, direct ? 'playing a direct link' : 'no direct link');
+                if (direct) return playStream(direct, 'Nenhum torrent conectou (' + tried.length + ' fontes sem peers). Trocando para link direto: ');
+                toast('Nenhum torrent conectou (' + tried.length + ' fontes sem peers). A rede pode estar bloqueando torrents agora; tente mais tarde ou um link direto (tecla verde)', 12000);
+            });
+        });
     }
 
     function heavyForTv(hash) {
