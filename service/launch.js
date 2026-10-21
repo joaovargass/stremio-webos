@@ -24,8 +24,11 @@ var INFO_HASH = /(?:^|\/|%2F)([0-9a-f]{40})(?=\/|%2F|$)/i;
 var routes = {};
 var seeded = {};
 var touched = {};
+var mirrors = {};
+var mirrorChecks = {};
 var lastScan = 0;
 var readAhead = new ReadAhead(tweaks.readAhead || { enabled: false });
+readAhead.mirrorsFor = mirrorsFor;
 var PROXY_LOOPBACK = /http(%3A|:)(%2F|\/)(%2F|\/)127\.0\.0\.1(%3A|:)8080/gi;
 
 function lanAddress() {
@@ -176,6 +179,89 @@ function serveWarm(reqUrl, res) {
     res.writeHead(valid ? 202 : 400, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ hash: hash, server: url.format(server) }));
     if (valid) warmTorrent(hash, server, query);
+}
+
+function filePathOf(reqUrl) {
+    // The torrent file part of a request path, without its query
+    return reqUrl.split('?')[0].toLowerCase();
+}
+
+function readHead(server, filePath, bytes, done) {
+    // Read the first bytes of a file; done gets the file size and those bytes, or nulls
+    var finish = once(done);
+    var parts = [];
+    var req = http.get({ hostname: server.hostname, port: server.port, path: filePath, headers: { Range: 'bytes=0-' + (bytes - 1) } }, function(res) {
+        var total = /\/(\d+)$/.exec(res.headers['content-range'] || '');
+        if (res.statusCode !== 206 || !total) {
+            res.resume();
+            return finish(null, null);
+        }
+        res.on('data', function(part) { parts.push(part); });
+        res.on('end', function() { finish(parseInt(total[1], 10), Buffer.concat(parts)); });
+        res.on('error', function() { finish(null, null); });
+    });
+    req.setTimeout((tweaks.prewarm || {}).timeoutMs || 120000, function() { req.destroy(); });
+    req.on('error', function() { finish(null, null); });
+}
+
+function mirrorSettings() {
+    // Limits for merging other torrents of the same file into the playing one
+    return (tweaks.readAhead || {}).mirrors || {};
+}
+
+function mirrorLimit(server) {
+    // Every torrent costs memory and peer connections on its server, and the TV has little of both
+    return isLocal(server) ? mirrorSettings().maxOnTv || 1 : mirrorSettings().max || 2;
+}
+
+function mirrorsFor(windowPath) {
+    // Verified mirrors of a playing file for the read-ahead window; using them keeps them from the idle cleanup
+    var list = mirrors[filePathOf(windowPath)] || [];
+    list.forEach(function(m) { touchTorrent(m.hash, m.server, null); });
+    return list.map(function(m) { return { key: m.path + '@' + m.server.host, hostname: m.server.hostname, port: m.server.port, path: m.path }; });
+}
+
+function verifyMirror(primaryPath, mirrorHash, mirrorIdx) {
+    // Another torrent is merged only when its file has the same size and the same first bytes as the playing one
+    var mirrorPath = '/' + mirrorHash + '/' + mirrorIdx;
+    var checkKey = primaryPath + '|' + mirrorPath;
+    var mirrorServer = sourceFor(mirrorPath);
+    if (mirrorChecks[checkKey] || primaryPath.indexOf('/' + mirrorHash + '/') === 0 || (mirrors[primaryPath] || []).length >= mirrorLimit(mirrorServer)) return false;
+    mirrorChecks[checkKey] = true;
+    var primaryServer = sourceFor(primaryPath);
+    var bytes = mirrorSettings().verifyBytes || 65536;
+    seedPeers(mirrorHash, mirrorServer, function() {
+        touchTorrent(mirrorHash, mirrorServer, null);
+        var heads = [];
+        var pending = 2;
+        var compare = function() {
+            if (--pending > 0) return;
+            var same = heads[0].size && heads[0].size === heads[1].size && heads[0].data.equals(heads[1].data);
+            console.log('mirror', mirrorPath, 'for', primaryPath, same ? 'verified' : 'differs');
+            var list = mirrors[primaryPath] = mirrors[primaryPath] || [];
+            if (same && list.length < mirrorLimit(mirrorServer)) list.push({ hash: mirrorHash, path: mirrorPath, server: mirrorServer });
+        };
+        [primaryServer, mirrorServer].forEach(function(server, i) {
+            var filePath = i ? mirrorPath : primaryPath;
+            readHead(server, filePath, bytes, function(size, data) {
+                heads[i] = { size: size, data: data || Buffer.alloc(0) };
+                compare();
+            });
+        });
+    });
+    return true;
+}
+
+function serveMirror(reqUrl, res) {
+    // Offer another torrent of the playing file as a mirror; the check runs in the background
+    var query = url.parse(reqUrl, true).query;
+    var hash = String(query.hash || '').toLowerCase();
+    var other = String(query.with || '').toLowerCase();
+    var valid = /^[0-9a-f]{40}$/.test(hash) && /^[0-9a-f]{40}$/.test(other) && hash !== other;
+    var primaryPath = '/' + hash + '/' + (parseInt(query.idx, 10) || 0);
+    var started = valid && verifyMirror(primaryPath, other, parseInt(query.widx, 10) || 0);
+    res.writeHead(valid ? 202 : 400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ file: primaryPath, checking: !!started, mirrors: (mirrors[primaryPath] || []).map(function(m) { return m.path; }) }));
 }
 
 function once(fn) {
@@ -394,11 +480,21 @@ function removeIdleTorrents() {
         if (entry.open > 0 || Date.now() - entry.at < limit) return;
         delete touched[key];
         delete seeded[key];
+        forgetMirrors(entry);
         var req = http.get({ hostname: entry.server.hostname, port: entry.server.port, path: '/' + entry.hash + '/remove', timeout: 10000 }, function(res) { res.resume(); });
         req.on('timeout', function() { req.destroy(); });
         req.on('error', function() {});
         console.log('removed idle torrent', entry.hash, 'on', entry.server.host);
     });
+}
+
+function forgetMirrors(entry) {
+    // A removed torrent can no longer be a mirror, and a removed playing file needs none
+    Object.keys(mirrors).forEach(function(primaryPath) {
+        if (primaryPath.indexOf('/' + entry.hash + '/') === 0) return delete mirrors[primaryPath];
+        mirrors[primaryPath] = mirrors[primaryPath].filter(function(m) { return m.hash !== entry.hash || m.server.host !== entry.server.host; });
+    });
+    Object.keys(mirrorChecks).forEach(function(key) { if (key.indexOf(entry.hash) !== -1) delete mirrorChecks[key]; });
 }
 
 function proxyToStreaming(req, res) {
@@ -472,7 +568,7 @@ function serveStatus(res) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     var transcoder = pickTranscoder(upstream);
     var subsync = subsyncServer(upstream);
-    res.end(JSON.stringify({ upstream: url.format(upstream), candidates: serverStatus, transcoder: transcoder ? url.format(transcoder) : null, subsync: subsync ? url.format(subsync) : null, fallback: remoteFallback(), routes: routes, activeStreams: activeStreams, readAhead: readAhead.status() }));
+    res.end(JSON.stringify({ upstream: url.format(upstream), candidates: serverStatus, transcoder: transcoder ? url.format(transcoder) : null, subsync: subsync ? url.format(subsync) : null, fallback: remoteFallback(), routes: routes, activeStreams: activeStreams, readAhead: readAhead.status(), mirrors: Object.keys(mirrors).reduce(function(all, p) { all[p] = mirrors[p].map(function(m) { return m.path + '@' + m.server.host; }); return all; }, {}) }));
 }
 
 // Single server: tweaks status and routes, static files, then proxy to streaming server
@@ -481,6 +577,7 @@ http.createServer(function(req, res) {
     if (urlPath === '/__tweaks/status') return serveStatus(res);
     if (urlPath === '/__tweaks/route') return serveRoute(req.url, res);
     if (urlPath === '/__tweaks/warm') return serveWarm(req.url, res);
+    if (urlPath === '/__tweaks/mirror') return serveMirror(req.url, res);
     if (urlPath === '/__tweaks/subsync') return serveSubsync(req, res);
     if (urlPath === '/__tweaks/overrides' && req.method === 'POST') return serveOverrides(req, res);
     serveStatic(urlPath, res, function() { proxyToStreaming(req, res); });

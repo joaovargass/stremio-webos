@@ -173,7 +173,14 @@
         "reserveMb": 80,
         "backMb": 4,
         "joinGapMb": 8,
-        "idleMs": 60000
+        "idleMs": 60000,
+        "mirrors": {
+            "enabled": true,
+            "max": 2,
+            "maxOnTv": 1,
+            "verifyBytes": 65536,
+            "chunkMb": 8
+        }
     },
     "doctor": {
         "enabled": true,

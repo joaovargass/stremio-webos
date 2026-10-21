@@ -30,6 +30,8 @@ function parseRange(header) {
 function ReadAhead(config) {
     this.config = config;
     this.buffer = null;
+    // Set by the proxy: other torrents verified to hold the same file, as { key, hostname, port, path }
+    this.mirrorsFor = function() { return []; };
 }
 
 ReadAhead.prototype.budget = function() {
@@ -61,6 +63,9 @@ ReadAhead.prototype.status = function() {
         readerPos: reader,
         aheadBytes: reader === null ? 0 : Math.max(0, b.end - reader),
         readers: b.readers.length,
+        heldBytes: b.heldBytes(),
+        mirrorBytes: b.mirrorBytes,
+        segments: b.segments.length,
         paused: b.paused,
         done: b.done,
         limitMb: Math.round(this.limitFor(b) / MB),
@@ -117,7 +122,13 @@ function Window(owner, req, upstream, start) {
     this.idleTimer = null;
     this.requestHeaders = req.headers;
     this.generation = 0;
+    this.segments = [];
+    this.helpers = {};
+    this.mirrorBytes = 0;
     this.open(upstream, start);
+    // Other torrents of the same file download later parts of it in parallel while the main read goes on
+    var self = this;
+    this.mirrorTimer = setInterval(function() { self.fillFromMirrors(); }, 1000);
 }
 
 Window.prototype = Object.create(EventEmitter.prototype);
@@ -128,6 +139,7 @@ Window.prototype.open = function(upstream, from) {
     var gen = ++this.generation;
     var current = function() { return gen === self.generation; };
     var headers = Object.assign({}, this.requestHeaders, { range: 'bytes=' + from + '-' });
+    this.upstream = upstream;
     this.upstreamReq = http.request({ hostname: upstream.hostname, port: upstream.port, path: this.path, method: 'GET', headers: headers }, function(res) {
         if (!current()) return res.resume();
         var contentRange = /\/(\d+)$/.exec(res.headers['content-range'] || '');
@@ -158,6 +170,115 @@ Window.prototype.switchSource = function(upstream) {
     if (previous) previous.destroy();
 };
 
+Window.prototype.fillFromMirrors = function() {
+    // Ask every idle mirror for the next part past what is held or requested, within the memory budget
+    if (this.failed || this.done || this.total === null) return;
+    var mirrors = this.owner.mirrorsFor(this.path);
+    if (!mirrors.length) return;
+    var chunk = ((this.owner.config.mirrors || {}).chunkMb || 8) * MB;
+    var limit = this.owner.limitFor(this);
+    var self = this;
+    var used = this.heldBytes() + this.inflightBytes();
+    // Mirror parts take at most half the budget, so the main read always has room and the player never waits on a gap
+    var mirrorUsed = this.segmentBytes() + this.inflightBytes();
+    mirrors.forEach(function(mirror) {
+        var helper = self.helpers[mirror.key] = self.helpers[mirror.key] || { busy: false, restUntil: 0 };
+        if (helper.busy || Date.now() < helper.restUntil) return;
+        // The part right after the main read stays with the main read; mirrors take the ones after it
+        var from = Math.max(self.end + chunk, self.frontier());
+        if (from >= self.total) return;
+        var to = Math.min(from + chunk, self.total) - 1;
+        if (used + (to - from + 1) > limit || mirrorUsed + (to - from + 1) > limit / 2) return;
+        used += to - from + 1;
+        mirrorUsed += to - from + 1;
+        self.fetchMirror(mirror, helper, from, to);
+    });
+};
+
+Window.prototype.frontier = function() {
+    // First byte nobody holds or has asked for yet
+    var edge = this.end;
+    this.segments.forEach(function(s) { edge = Math.max(edge, s.offset + s.data.length); });
+    var helpers = this.helpers;
+    Object.keys(helpers).forEach(function(key) { if (helpers[key].busy) edge = Math.max(edge, helpers[key].to + 1); });
+    return edge;
+};
+
+Window.prototype.segmentBytes = function() {
+    // Bytes held past the contiguous window, waiting for the main read to reach them
+    return this.segments.reduce(function(sum, s) { return sum + s.data.length; }, 0);
+};
+
+Window.prototype.inflightBytes = function() {
+    // Bytes mirrors were asked for and have not delivered yet
+    var helpers = this.helpers;
+    return Object.keys(helpers).reduce(function(sum, key) { return sum + (helpers[key].busy ? helpers[key].to - helpers[key].from + 1 : 0); }, 0);
+};
+
+Window.prototype.fetchMirror = function(mirror, helper, from, to) {
+    // Read one part from a mirror; a failed or short answer rests that mirror for 30 s
+    var self = this;
+    var parts = [];
+    helper.busy = true;
+    helper.from = from;
+    helper.to = to;
+    var done = function(ok) {
+        if (!helper.busy) return;
+        helper.busy = false;
+        helper.req = null;
+        var data = ok ? Buffer.concat(parts) : null;
+        if (!data || data.length !== to - from + 1) {
+            helper.restUntil = Date.now() + 30000;
+            return;
+        }
+        if (self.failed) return;
+        self.mirrorBytes += data.length;
+        self.segments.push({ offset: from, data: data });
+        self.segments.sort(function(a, b) { return a.offset - b.offset; });
+        self.mergeSegments();
+    };
+    helper.req = http.get({ hostname: mirror.hostname, port: mirror.port, path: mirror.path, headers: { Range: 'bytes=' + from + '-' + to } }, function(res) {
+        // A mirror of another size is a different file, whatever its name says
+        var total = /\/(\d+)$/.exec(res.headers['content-range'] || '');
+        if (res.statusCode !== 206 || !total || parseInt(total[1], 10) !== self.total) {
+            res.resume();
+            return done(false);
+        }
+        res.on('data', function(part) { parts.push(part); });
+        res.on('end', function() { done(true); });
+        res.on('error', function() { done(false); });
+    });
+    helper.req.setTimeout(120000, function() { helper.req.destroy(); });
+    helper.req.on('error', function() { done(false); });
+};
+
+Window.prototype.mergeSegments = function() {
+    // Parts the main read has reached join the window; the main read then jumps past them
+    var jumped = false;
+    while (this.segments.length && this.segments[0].offset <= this.end) {
+        var seg = this.segments.shift();
+        var skip = this.end - seg.offset;
+        if (skip >= seg.data.length) continue;
+        var data = skip ? seg.data.slice(skip) : seg.data;
+        this.chunks.push({ offset: this.end, data: data });
+        this.end += data.length;
+        jumped = true;
+    }
+    if (!jumped) return;
+    if (this.end >= this.total) {
+        this.done = true;
+        if (this.upstreamReq) this.upstreamReq.destroy();
+    } else {
+        // A new main read continues after the merged part; events of the previous one are ignored
+        var previous = this.upstreamReq;
+        this.paused = false;
+        this.open(this.upstream, this.end);
+        if (previous) previous.destroy();
+    }
+    this.trim();
+    this.emit('data');
+};
+
 Window.prototype.fail = function() {
     // Wake every reader so it can fall back or finish
     this.failed = true;
@@ -170,7 +291,9 @@ Window.prototype.push = function(chunk) {
     this.chunks.push({ offset: this.end, data: chunk });
     this.end += chunk.length;
     this.trim();
-    if (this.aheadBytes() >= this.owner.limitFor(this) && !this.paused) {
+    // The main read may just have reached a part a mirror already delivered
+    if (this.segments.length && this.segments[0].offset <= this.end) return this.mergeSegments();
+    if (this.heldBytes() >= this.owner.limitFor(this) && !this.paused) {
         this.paused = true;
         this.upstreamRes.pause();
     }
@@ -189,6 +312,11 @@ Window.prototype.aheadBytes = function() {
     return this.end - (pos === null ? this.start : pos);
 };
 
+Window.prototype.heldBytes = function() {
+    // Everything kept in memory ahead of the slowest reader, mirror parts included
+    return this.aheadBytes() + this.segmentBytes();
+};
+
 Window.prototype.trim = function() {
     // Drop chunks fully behind the slowest reader minus the back buffer
     var pos = this.minReaderPos();
@@ -203,7 +331,7 @@ Window.prototype.trim = function() {
 Window.prototype.maybeResume = function() {
     // Resume downloading once the readers consumed a quarter of the budget
     this.trim();
-    if (this.paused && this.aheadBytes() < this.owner.limitFor(this) * 0.75) {
+    if (this.paused && this.heldBytes() < this.owner.limitFor(this) * 0.75) {
         this.paused = false;
         this.upstreamRes.resume();
     }
@@ -292,10 +420,14 @@ Window.prototype.scheduleIdle = function() {
 Window.prototype.destroy = function() {
     // Abort the upstream read, end pending readers and release every chunk
     if (this.idleTimer) clearTimeout(this.idleTimer);
+    if (this.mirrorTimer) clearInterval(this.mirrorTimer);
     if (this.upstreamReq) this.upstreamReq.destroy();
+    var helpers = this.helpers;
+    Object.keys(helpers).forEach(function(key) { if (helpers[key].req) helpers[key].req.destroy(); });
     this.failed = true;
     this.emit('data');
     this.chunks = [];
+    this.segments = [];
     this.removeAllListeners();
 };
 
