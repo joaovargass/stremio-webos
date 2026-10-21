@@ -1,6 +1,6 @@
 --- video.chunk.js
 +++ video.chunk.js
-@@ -21197,7 +21197,10 @@
+@@ -21197,7 +21197,12 @@
                  }, 100);
              });
              A.onloadedmetadata = function() {
@@ -8,7 +8,9 @@
 +                    // A reload by the tweaks resumes where it was, not at the position the player opened with
 +                    var resume = A.__twkResumeMs;
 +                    A.__twkResumeMs = null;
-+                    G("buffering"), G("buffered"), V("time", null != resume ? resume : C)
++                    var target = null != resume ? resume : C;
++                    // A seek to where the video already is still makes the TV pipeline reload its start, which is slow on a stream converted on the fly
++                    G("buffering"), G("buffered"), null != target && Math.abs(target - 1e3 * A.currentTime) > 1e3 && V("time", target)
                  }, A.onvolumechange = function() {
                      G("volume"), G("muted")
                  }, A.onratechange = function() {
