@@ -6,12 +6,32 @@ small ffmpeg and needs that converter for DTS/TrueHD audio and pictures the TV c
 The mp4 track reader also prints every box it parses, Buffers included, on each track listing,
 which costs TV CPU and buries the service log. Every new torrent starts a cache cleanup; when
 several start together, two cleanups delete the same leftover file and the second one logged
-the missing file as an error, although the file being gone is the goal.
+the missing file as an error, although the file being gone is the goal. The player timeline
+needs to show which parts of a file are downloaded and well seeded, which only the engine knows,
+so a /<infohash>/<file>/pieces.json route returns that map.
 
 Usage: python3 tools/patch-webos-server.py path/to/server.js
 """
 
 import sys
+
+# Per-file piece map for the player timeline: for each of N equal parts of the file, the share of pieces already
+# downloaded, how many connected peers hold them on average (a wire keeps its peer's pieces as a plain array of
+# booleans), and the ranges the engine is fetching first
+PIECE_MAP = (
+    "function getPieceMap(e,idx,n){"
+    "if(!e||!e.torrent||!e.bitfield||!e.torrent.files[idx])return null;"
+    "var file=e.torrent.files[idx],size=e.torrent.pieceLength,"
+    "start=file.offset/size|0,end=(file.offset+file.length-1)/size|0,total=end-start+1,"
+    "count=Math.max(1,Math.min(400,parseInt(n,10)||100,total)),wires=e.swarm.wires,parts=[];"
+    "for(var b=0;b<count;b++){"
+    "var from=start+Math.floor(b*total/count),to=start+Math.floor((b+1)*total/count)-1,have=0,held=0;"
+    "for(var i=from;i<=to;i++){e.bitfield.get(i)&&have++;"
+    "for(var w=0;w<wires.length;w++)wires[w].peerPieces[i]&&held++}"
+    "var len=to-from+1;parts.push([Math.round(have/len*100)/100,Math.round(held/len*10)/10])}"
+    "return{pieceLength:size,pieces:total,peers:wires.length,downloadSpeed:e.swarm.downloadSpeed(),"
+    "parts:parts,selections:e.selection.map((function(s){return[Math.max(0,s.from-start),Math.min(total-1,s.to-start),s.priority]}))}}"
+)
 
 PATCHES = [
     (
@@ -26,6 +46,19 @@ PATCHES = [
         "deleted++,fs.unlink(f.path,(function(e){e&&console.error(e)}))",
         'deleted++,fs.unlink(f.path,(function(e){e&&"ENOENT"!==e.code&&console.error(e)}))',
     ),
+    (
+        "function getStatistics(e,idx){",
+        PIECE_MAP + "function getStatistics(e,idx){",
+    ),
+    (
+        'router.get("/:infoHash/:idx/stats.json",(function(req,res){res.writeHead(200,jsonHead),'
+        "res.end(JSON.stringify(getStatistics(engines[req.params.infoHash],req.params.idx)))})),",
+        'router.get("/:infoHash/:idx/stats.json",(function(req,res){res.writeHead(200,jsonHead),'
+        "res.end(JSON.stringify(getStatistics(engines[req.params.infoHash],req.params.idx)))})),"
+        'router.get("/:infoHash/:idx/pieces.json",(function(req,res){res.writeHead(200,jsonHead),'
+        "res.end(JSON.stringify(getPieceMap(engines[req.params.infoHash],req.params.idx,"
+        "url.parse(req.url,!0).query.buckets)))})),",
+    ),
 ]
 
 
@@ -36,10 +69,10 @@ def patch(path: str) -> None:
         source = handle.read()
     applied = 0
     for old, new in PATCHES:
-        # A patch already in the file leaves its anchor gone and its replacement in place once
-        found = source.count(old)
-        if found == 0 and source.count(new) == 1:
+        # A patch already in the file has its replacement in place; some replacements keep their anchor inside
+        if source.count(new) == 1:
             continue
+        found = source.count(old)
         # Each anchor must appear exactly once or the upstream bundle changed
         if found != 1:
             sys.exit(f"ERROR: expected 1 occurrence of {old[:50]!r}, found {found}")
