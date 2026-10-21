@@ -4,7 +4,9 @@
 # official server.js patched to listen on STREMIO_PORT, Homebrew ffmpeg for HLS,
 # disk cache, the "Fast" torrent profile, kept alive by launchd and caffeinate.
 # Also installs the subtitle sync service (ffsubsync in its own Python venv, on
-# SUBSYNC_PORT) and the daily Dev Mode keepalive. Safe to run again.
+# SUBSYNC_PORT) and the daily Dev Mode keepalive. Safe to run again: an agent is
+# restarted only when its files changed or it is not loaded, so a video being
+# served is not interrupted.
 #
 # Requires: Homebrew node@22 and ffmpeg, curl, python3.
 # Usage: ./mac/install.sh   (env: SERVER_VERSION, STREMIO_PORT, SUBSYNC_PORT, CACHE_BYTES)
@@ -30,19 +32,32 @@ for bin in "$NODE_BIN" "$FFMPEG_DIR/ffmpeg" "$FFMPEG_DIR/ffprobe"; do
 done
 
 mkdir -p "$DEST/data" "$AGENTS"
+STAGE="$(mktemp -d)"
+trap 'rm -rf "$STAGE"' EXIT
+
+# Copy a staged file into place and print 1 when its content changed, 0 when it was already there
+install_file() {
+    if cmp -s "$1" "$2"; then
+        echo 0
+    else
+        cp "$1" "$2"
+        echo 1
+    fi
+}
 
 echo "==> Downloading Stremio server v$SERVER_VERSION (desktop build)"
-curl -fsSL -o "$DEST/server.js" "https://dl.strem.io/server/v$SERVER_VERSION/desktop/server.js"
-python3 "$HERE/patch-server.py" "$DEST/server.js"
-cp "$HERE/devmode-keepalive.sh" "$DEST/devmode-keepalive.sh"
-cp "$HERE/subsync.js" "$DEST/subsync.js"
+curl -fsSL -o "$STAGE/server.js" "https://dl.strem.io/server/v$SERVER_VERSION/desktop/server.js"
+python3 "$HERE/patch-server.py" "$STAGE/server.js"
+SERVER_CHANGED=$(install_file "$STAGE/server.js" "$DEST/server.js")
+SUBSYNC_CHANGED=$(install_file "$HERE/subsync.js" "$DEST/subsync.js")
+install_file "$HERE/devmode-keepalive.sh" "$DEST/devmode-keepalive.sh" >/dev/null
 
 echo "==> Installing ffsubsync into $VENV"
 [ -x "$VENV/bin/python" ] || python3 -m venv "$VENV"
 "$VENV/bin/pip" install --quiet --upgrade pip ffsubsync
 
 echo "==> Writing launchd agents"
-cat > "$AGENTS/$SERVER_LABEL.plist" <<EOF
+cat > "$STAGE/$SERVER_LABEL.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -71,7 +86,7 @@ cat > "$AGENTS/$SERVER_LABEL.plist" <<EOF
 </dict>
 </plist>
 EOF
-cat > "$AGENTS/$SUBSYNC_LABEL.plist" <<EOF
+cat > "$STAGE/$SUBSYNC_LABEL.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -95,7 +110,7 @@ cat > "$AGENTS/$SUBSYNC_LABEL.plist" <<EOF
 </dict>
 </plist>
 EOF
-cat > "$AGENTS/$KEEPALIVE_LABEL.plist" <<EOF
+cat > "$STAGE/$KEEPALIVE_LABEL.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -110,8 +125,18 @@ cat > "$AGENTS/$KEEPALIVE_LABEL.plist" <<EOF
 </plist>
 EOF
 
-echo "==> (Re)loading agents"
+echo "==> (Re)loading agents whose files changed"
+SERVER_RESTARTED=0
 for label in "$SERVER_LABEL" "$SUBSYNC_LABEL" "$KEEPALIVE_LABEL"; do
+    changed=$(install_file "$STAGE/$label.plist" "$AGENTS/$label.plist")
+    [ "$label" = "$SERVER_LABEL" ] && [ "$SERVER_CHANGED" = 1 ] && changed=1
+    [ "$label" = "$SUBSYNC_LABEL" ] && [ "$SUBSYNC_CHANGED" = 1 ] && changed=1
+    if [ "$changed" = 0 ] && launchctl print "gui/$(id -u)/$label" >/dev/null 2>&1; then
+        echo "    $label unchanged, kept running"
+        continue
+    fi
+    echo "    $label (re)starting"
+    [ "$label" = "$SERVER_LABEL" ] && SERVER_RESTARTED=1
     launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
     # bootout is asynchronous; bootstrapping before the old job is gone fails with EIO
     for _ in $(seq 1 20); do
@@ -121,15 +146,17 @@ for label in "$SERVER_LABEL" "$SUBSYNC_LABEL" "$KEEPALIVE_LABEL"; do
     launchctl bootstrap "gui/$(id -u)" "$AGENTS/$label.plist"
 done
 
-echo "==> Waiting for the server on :$STREMIO_PORT"
-for _ in $(seq 1 30); do
-    curl -fs -o /dev/null "http://127.0.0.1:$STREMIO_PORT/settings" && break
-    sleep 1
-done
+if [ "$SERVER_RESTARTED" = 1 ]; then
+    echo "==> Waiting for the server on :$STREMIO_PORT"
+    for _ in $(seq 1 30); do
+        curl -fs -o /dev/null "http://127.0.0.1:$STREMIO_PORT/settings" && break
+        sleep 1
+    done
 
-echo "==> Applying the Fast torrent profile (soft limit = hard limit, so the cache fills ahead) and disk cache"
-curl -fsS -X POST -H 'Content-Type: application/json' \
-    -d "{\"btDownloadSpeedHardLimit\":39321600,\"btDownloadSpeedSoftLimit\":39321600,\"btHandshakeTimeout\":20000,\"btMaxConnections\":200,\"btMinPeersForStable\":10,\"btRequestTimeout\":4000,\"cacheSize\":$CACHE_BYTES}" \
-    "http://127.0.0.1:$STREMIO_PORT/settings"
-echo
-echo "Done: http://$(ipconfig getifaddr en0 2>/dev/null || echo '<mac-ip>'):$STREMIO_PORT/ (add it to service/tweaks.json servers.candidates)"
+    echo "==> Applying the Fast torrent profile (soft limit = hard limit, so the cache fills ahead) and disk cache"
+    curl -fsS -X POST -H 'Content-Type: application/json' \
+        -d "{\"btDownloadSpeedHardLimit\":39321600,\"btDownloadSpeedSoftLimit\":39321600,\"btHandshakeTimeout\":20000,\"btMaxConnections\":200,\"btMinPeersForStable\":10,\"btRequestTimeout\":4000,\"cacheSize\":$CACHE_BYTES}" \
+        "http://127.0.0.1:$STREMIO_PORT/settings"
+    echo
+fi
+echo "Done: http://$(ipconfig getifaddr en0 2>/dev/null || echo '<mac-ip>'):$STREMIO_PORT/ (the TV finds it on port $STREMIO_PORT by itself)"
