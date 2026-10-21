@@ -107,6 +107,14 @@
         if (!live.timer) live.timer = setInterval(measure, settings.everyMs || 2000);
     }
 
+    function releaseCandidates() {
+        // Once the test is over only the recommended source stays started; the others stop using the home connection now
+        var keep = liveKey((window.__stremioRankedStreams || [])[0]);
+        live.candidates.forEach(function (s) {
+            if (liveKey(s) !== keep && live.classes[liveKey(s)] !== 'dead') fetch('/__tweaks/forget?hash=' + s.infoHash.toLowerCase()).catch(function () {});
+        });
+    }
+
     function stopTesting() {
         // End the measuring loop; the last numbers stay for the ranking and the picker
         if (live.timer) clearInterval(live.timer);
@@ -119,6 +127,7 @@
         var doctor = window.__stremioDoctor;
         if (Date.now() - live.started > (settings.windowMs || 30000)) {
             console.info('[tweaks] source test done', JSON.stringify(live.classes));
+            releaseCandidates();
             return stopTesting();
         }
         if (!doctor) return;
