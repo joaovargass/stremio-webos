@@ -137,12 +137,14 @@
         changed = false;
         paint();
         requestAnimationFrame(function () { panel.classList.add('twk-visible'); });
+        window.__twkPanels.opened('settings');
     }
 
     function hide() {
         // Close the panel and reload once so every module starts with the new choices
         open = false;
         panel.classList.remove('twk-visible');
+        window.__twkPanels.closed('settings');
         if (!changed) return;
         if (window.__stremioToast) window.__stremioToast.show('Ajustes salvos, aplicando...');
         setTimeout(function () { location.reload(); }, 800);
@@ -171,6 +173,7 @@
         rows[focus].row.scrollIntoView({ block: 'nearest' });
     }
 
+    window.__twkPanels.add('settings', function () { if (open) hide(); });
     window.addEventListener('keydown', onKey, true);
 
     window.__stremioSettings = {

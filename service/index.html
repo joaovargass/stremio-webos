@@ -39,6 +39,29 @@
             }));
         })(window.STREMIO_TWEAKS);
     </script>
+    <script>
+        // One overlay at a time: opening a panel closes the others, and Back closes the open panel before the app sees it
+        window.__twkPanels = (function() {
+            var panels = {};
+            var current = null;
+            return {
+                add: function(name, close) { panels[name] = close; },
+                opened: function(name) {
+                    Object.keys(panels).forEach(function(other) { if (other !== name) panels[other](); });
+                    current = name;
+                },
+                closed: function(name) { if (current === name) current = null; },
+                current: function() { return current; }
+            };
+        })();
+        window.addEventListener('keydown', function(e) {
+            var name = window.__twkPanels.current();
+            if (!name || (e.keyCode !== 461 && e.keyCode !== 27 && e.keyCode !== 8)) return;
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            window.__twkPanels.opened(null);
+        }, true);
+    </script>
     <script defer src="webos-enhance.js"></script>
     <script defer src="webos-retry.js"></script>
     <script defer src="webos-subs.js"></script>

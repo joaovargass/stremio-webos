@@ -232,6 +232,7 @@
         render();
         requestAnimationFrame(function () { panel.classList.add('twk-visible'); });
         timer = setInterval(render, config.refreshMs);
+        window.__twkPanels.opened('diag');
     }
 
     function close() {
@@ -239,6 +240,7 @@
         if (timer) clearInterval(timer);
         timer = null;
         if (panel) panel.classList.remove('twk-visible');
+        window.__twkPanels.closed('diag');
     }
 
     function onRouteChange() {
@@ -250,6 +252,7 @@
     window.addEventListener('hashchange', onRouteChange);
     window.addEventListener('historyChange', onRouteChange);
 
+    window.__twkPanels.add('diag', close);
     window.__stremioDiag = {
         toggle: function () { return timer ? close() : open(); },
         close: close

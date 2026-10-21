@@ -119,7 +119,7 @@
         list.textContent = '';
         list.appendChild(element('div', 'twk-src-empty', 'Buscando fontes...'));
         requestAnimationFrame(function () { panel.classList.add('twk-visible'); });
-        if (window.__stremioDiag && window.__stremioDiag.close) window.__stremioDiag.close();
+        window.__twkPanels.opened('sources');
         Promise.all([ensureStreams(), window.__stremioDoctor ? window.__stremioDoctor.currentStream() : null]).then(function (results) {
             if (!open) return;
             items = results[0].slice(0, config.maxItems || 10);
@@ -132,6 +132,7 @@
         // Close the picker and give the keys back to the player
         open = false;
         if (panel) panel.classList.remove('twk-visible');
+        window.__twkPanels.closed('sources');
     }
 
     function choose() {
@@ -245,6 +246,7 @@
         return;
     }
 
+    window.__twkPanels.add('sources', hide);
     window.addEventListener('keydown', onKey, true);
     // The app router navigates with pushState and announces it as historyChange
     window.addEventListener('hashchange', watchLoading);
