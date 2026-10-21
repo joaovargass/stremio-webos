@@ -3,3 +3,4 @@ service/server.js
 service/www/
 service/bin/
 .claude/
+__pycache__/
