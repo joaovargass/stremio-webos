@@ -34,6 +34,7 @@ var mirrors = {};
 var mirrorChecks = {};
 var subtitleCache = [];
 var ownServer = false;
+var hlsSessions = {};
 var lastScan = 0;
 var readAhead = new ReadAhead(tweaks.readAhead || { enabled: false });
 readAhead.mirrorsFor = mirrorsFor;
@@ -134,13 +135,39 @@ function rewriteLoopback(path, target, source) {
     });
 }
 
-function pickTranscoder(source) {
-    // The source when it has ffmpeg, else the first reachable configured transcoder
+function localTranscoder() {
+    // The TV converts by itself when its own bundled server runs with the bundled ffmpeg
+    return ownServer && fs.existsSync(process.env.FFMPEG_BIN) ? url.parse(candidates.filter(function(c) { return isLocal(url.parse(c)); })[0] || 'http://127.0.0.1:11470/') : null;
+}
+
+function lanTranscoder(source) {
+    // The source when it is a LAN server with ffmpeg, else the first reachable configured one
     if (transcoders.indexOf(url.format(source)) !== -1) return source;
     var best = transcoders.filter(function(candidate) { return serverStatus[candidate] && allowed(candidate); })[0];
     if (!best) return null;
     // A remote transcoder can only read media from this TV when its LAN address is known
     return mediaHost(url.parse(best), source) ? url.parse(best) : null;
+}
+
+function pickTranscoder(source, heavy) {
+    // Audio conversions and probes run on the TV; a picture re-encode, too slow for the TV in real time, goes to a LAN server when one answers
+    var local = localTranscoder();
+    var lan = lanTranscoder(source);
+    return heavy ? lan || local : local || lan;
+}
+
+function transcoderFor(req, source) {
+    // Every request of one HLS session goes to the server that started it
+    var id = (/^\/hlsv2\/([^/?]+)/.exec(req.url) || [])[1];
+    if (id && id !== 'probe' && hlsSessions[id]) return hlsSessions[id];
+    var target = pickTranscoder(source, /[?&]forceTranscoding=/.test(req.url));
+    if (id && id !== 'probe' && target) {
+        hlsSessions[id] = target;
+        // Only recent sessions matter; older ids are forgotten
+        var ids = Object.keys(hlsSessions);
+        if (ids.length > 50) delete hlsSessions[ids[0]];
+    }
+    return target;
 }
 
 function remoteFallback() {
@@ -658,7 +685,7 @@ function proxyToStreaming(req, res) {
     if (!HLS_PATH.test(req.url)) return proxyRequest(req, res, source, source);
     traceRequest(req, res, 'hls');
     // HLS conversion needs ffmpeg; answer at once when no server can convert so the player moves on
-    var transcoder = pickTranscoder(source);
+    var transcoder = transcoderFor(req, source);
     if (transcoder) return proxyRequest(req, res, transcoder, source);
     res.writeHead(503, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'no transcoder available' }));
@@ -704,8 +731,8 @@ function proxyRequest(req, res, target, source, path) {
 }
 
 function subsyncServer(source) {
-    // The sync service runs on the host of the ffmpeg server, on its own port
-    var transcoder = pickTranscoder(source);
+    // The sync service runs on the host of the LAN ffmpeg server, on its own port
+    var transcoder = lanTranscoder(source);
     if (!transcoder || isLocal(transcoder)) return null;
     return url.parse('http://' + transcoder.hostname + ':' + (tweaks.servers.subsyncPort || 11481) + '/');
 }
