@@ -119,9 +119,10 @@
     function probeHasAudio(server, mediaUrl) {
         // Ask the streaming server whether the source carries any audio stream
         var probeUrl = server.replace(/\/$/, '') + '/hlsv2/probe?mediaURL=' + encodeURIComponent(mediaUrl);
-        return fetch(probeUrl).then(function (resp) { return resp.json(); }).then(function (probe) {
-            return (probe.streams || []).some(function (s) { return s.track === 'audio'; });
-        }).catch(function () { return false; });
+        // ffprobe on the Mac takes seconds, so this probe gets its own, longer limit
+        return window.__stremioDoctor.fetchJson(probeUrl, hlsConfig.probeTimeoutMs).then(function (probe) {
+            return !!probe && (probe.streams || []).some(function (s) { return s.track === 'audio'; });
+        });
     }
 
     function checkMissingAudio(video) {

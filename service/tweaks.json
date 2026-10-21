@@ -66,6 +66,7 @@
             "eac3"
         ],
         "maxAudioChannels": 6,
+        "probeTimeoutMs": 20000,
         "onMissingAudio": true,
         "audioCheckDelayMs": 1500
     },

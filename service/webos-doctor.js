@@ -74,10 +74,10 @@
         return 0;
     }
 
-    function fetchJson(target) {
+    function fetchJson(target, timeoutMs) {
         // Fetch JSON and resolve null on any failure; a server holding the request (a torrent without metadata) must not freeze the caller
         var controller = new AbortController();
-        var timer = setTimeout(function () { controller.abort(); }, config.requestTimeoutMs || 4000);
+        var timer = setTimeout(function () { controller.abort(); }, timeoutMs || config.requestTimeoutMs || 4000);
         return fetch(target, { signal: controller.signal })
             .then(function (r) { return r.json(); })
             .catch(function () { return null; })
