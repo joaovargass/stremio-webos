@@ -20,9 +20,32 @@
             xhr.send();
             return xhr.status === 200 ? JSON.parse(xhr.responseText) : {};
         })();
+        // Apply the on/off choices saved from the settings panel over tweaks.json, then share them with the service
+        (function(tweaks) {
+            var overrides = {};
+            try { overrides = JSON.parse(localStorage.getItem('twk.overrides') || '{}'); } catch (e) {}
+            Object.keys(overrides).forEach(function(key) {
+                var parts = key.split('.');
+                tweaks[parts[0]] = tweaks[parts[0]] || {};
+                tweaks[parts[0]][parts[1]] = overrides[key];
+            });
+            // The service outlives page reloads, so always send the effective values, not only the changed ones
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', '/__tweaks/overrides');
+            xhr.setRequestHeader('Content-Type', 'application/json');
+            xhr.send(JSON.stringify({
+                'servers.useLan': (tweaks.servers || {}).useLan !== false,
+                'readAhead.enabled': (tweaks.readAhead || {}).enabled !== false
+            }));
+        })(window.STREMIO_TWEAKS);
     </script>
     <script defer src="webos-enhance.js"></script>
     <script defer src="webos-retry.js"></script>
+    <script defer src="webos-subs.js"></script>
+    <script defer src="webos-subsync.js"></script>
+    <script defer src="webos-doctor.js"></script>
+    <script defer src="webos-sources.js"></script>
+    <script defer src="webos-settings.js"></script>
     <script defer src="webos-diag.js"></script>
     <script defer src="runtime.js"></script>
     <script defer src="main.js"></script>
