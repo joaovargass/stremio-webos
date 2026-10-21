@@ -290,6 +290,11 @@
         "convertTimeoutMs": 20000,
         "convertMaxBytes": 4194304
     },
+    "answerCache": {
+        "enabled": true,
+        "meta": { "ttlMs": 600000, "maxEntries": 40, "maxBytes": 1048576, "maxEntryBytes": 262144 },
+        "hlsStart": { "segments": 3, "ttlMs": 600000, "maxEntries": 12, "maxBytes": 16777216, "maxEntryBytes": 8388608, "singleGroup": true }
+    },
     "devMode": {
         "keepAlive": true,
         "tokenPath": "/var/luna/preferences/devmode_enabled",

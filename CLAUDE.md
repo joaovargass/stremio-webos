@@ -23,6 +23,7 @@ app/                  # webOS app shell — starts service, redirects to http://
 service/              # webOS service
   launch.js           # Entry point: serves www/ on :8080, proxies to the TV server, LAN fallback per video, HLS and sync routing
   readahead.js        # RAM read-ahead window for torrent files, budget adapted to free memory
+  answercache.js      # Short-lived RAM copies of repeated server answers (subtitle hash, track list, HLS start)
   index.html          # Theater entry point (sets __STREMIO_SERVER_URL__ to :8080, loads tweaks.json + saved on/off choices)
   tweaks.json         # Defaults for every tweak, shared by launch.js and the frontend
   webos-enhance.js    # Points the profile at the proxy, adds trackers, ranks streams, prewarms the recommended one
@@ -62,7 +63,8 @@ mac/                  # Optional dedicated streaming server for a Mac on the sam
    - `GET /__tweaks/subsync?media=&sub=&at=`: forwarded to the sync service on the transcoder host.
    - `/hlsv2/*`: sent to a server listed in `servers.transcoders` (ffmpeg), answered 503 at once when none is reachable.
    Media URLs inside requests (`http://127.0.0.1:8080/...`) are rewritten to an address the target server can read (its loopback, the TV address of the same family as that server, or the source host). An HLS session stays on the server that started it only while that server still answers and may be used.
-   The service also renews the Developer Mode session from the TV itself (`devMode`: it reads the session token the TV keeps in `devMode.tokenPath`, calls `devMode.resetUrl` a minute after start and every `devMode.everyHours`, and logs only the outcome), so the app survives without a computer running the Mac keepalive.
+   Answers the TV asks for more than once are fetched once (`answerCache`, `answercache.js`): the core and the tweaks both ask for `/opensubHash` and `/tracks/` of the playing video, and the TV media pipeline reads the init and first `answerCache.hlsStart.segments` segments of a conversion twice (probe, then play), which made the converter cancel its running job and encode segment 1 again. Identical requests in flight wait for the first answer, later ones get a RAM copy for `ttlMs`, keyed by URL and Range; only complete 200/206 answers are kept, a failed one sends each waiter to fetch its own, the HLS copies belong to the newest conversion only and stay under `maxBytes`.
+   The service also renews the Developer Mode session from the TV itself (`devMode`: it reads the session token the TV keeps in `devMode.tokenPath`, calls `devMode.resetUrl` a minute after start and every `devMode.everyHours`, retries a failed renewal every `devMode.retryMs` up to `devMode.retries` times, and logs only the outcome), so the app survives without a computer running the Mac keepalive.
 
 The proxy exists because the app loads from `file://` which cannot XHR/fetch to `http://` origins (CORS restriction on webOS Chrome 68). Serving everything from `:8080` makes all requests same-origin. It also lets the app use a LAN server: the desktop streaming server only sends CORS headers to `*.strem.io`/`*.stremio.com` and `127.0.0.1:11470`, so the browser cannot call it directly, but the Node proxy can.
 

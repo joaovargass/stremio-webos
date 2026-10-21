@@ -45,6 +45,7 @@
         ] },
         { title: 'TV e rede', column: 0, items: [
             ['readAhead.enabled', 'Buffer extra na memória da TV'],
+            ['answerCache.enabled', 'Guardar na memória o começo das conversões e as listas de faixas'],
             ['servers.useLan', 'Usar o servidor do Mac quando a TV não der conta'],
             ['doctor.startOnLanWhenHeavy', 'Começar pelo Mac se a fonte for pesada para a TV'],
             ['devMode.keepAlive', 'Renovar o modo desenvolvedor sozinho']

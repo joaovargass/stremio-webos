@@ -12,6 +12,7 @@ var url = require('url');
 var util = require('util');
 var Service = require('webos-service');
 var ReadAhead = require('./readahead');
+var AnswerCache = require('./answercache');
 var subtitles = require('./subtitles');
 
 var logLines = [];
@@ -42,6 +43,11 @@ var lastNetwork = null;
 var discovered = {};
 var serverInfo = {};
 var readAhead = new ReadAhead(tweaks.readAhead || { enabled: false });
+var answerSettings = tweaks.answerCache || {};
+var metaAnswers = new AnswerCache(answerSettings.meta || {});
+var hlsStartAnswers = new AnswerCache(answerSettings.hlsStart || {});
+var META_PATH = /^\/(opensubHash\?|tracks\/)/;
+var HLS_START_PATH = /^\/hlsv2\/([^/?]+)\/[^/?]+\/(?:init\.mp4|segment(\d+)\.m4s)(\?|$)/;
 readAhead.mirrorsFor = mirrorsFor;
 var proxyUrl = url.parse(tweaks.servers.coreUrl);
 var PROXY_LOOPBACK = new RegExp('http(%3A|:)(%2F|\\/)(%2F|\\/)' + proxyUrl.hostname.replace(/\./g, '\\.') + '(%3A|:)' + proxyUrl.port, 'gi');
@@ -137,6 +143,7 @@ function serveOverrides(req, res) {
         if (typeof overrides['subtitles.allowHttp'] === 'boolean') tweaks.subtitles.allowHttp = overrides['subtitles.allowHttp'];
         tweaks.devMode = tweaks.devMode || {};
         if (typeof overrides['devMode.keepAlive'] === 'boolean') tweaks.devMode.keepAlive = overrides['devMode.keepAlive'];
+        if (typeof overrides['answerCache.enabled'] === 'boolean') answerSettings.enabled = overrides['answerCache.enabled'];
         if (!lanAllowed()) {
             routes = {};
             selectUpstream();
@@ -847,13 +854,39 @@ function proxyToStreaming(req, res) {
         });
     }
     if (STREAM_PATH.test(req.url)) trackStream(res);
-    if (!HLS_PATH.test(req.url)) return proxyRequest(req, res, source, source);
+    if (!HLS_PATH.test(req.url)) {
+        // Subtitle hashes and track lists are asked by the core and the tweaks alike; one server answer serves both
+        if (answerSettings.enabled && req.method === 'GET' && META_PATH.test(req.url)) return shareAnswer(req, res, metaAnswers, 'meta', function(r, s, onResponse) { proxyRequest(r, s, source, source, null, onResponse); });
+        return proxyRequest(req, res, source, source);
+    }
     traceRequest(req, res, 'hls');
     // HLS conversion needs ffmpeg; answer at once when no server can convert so the player moves on
     var transcoder = transcoderFor(req, source);
-    if (transcoder) return proxyHls(req, res, transcoder, source);
-    res.writeHead(503, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'no transcoder available' }));
+    if (!transcoder) {
+        res.writeHead(503, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'no transcoder available' }));
+    }
+    var session = hlsStartSession(req);
+    if (session) return shareAnswer(req, res, hlsStartAnswers, session, function(r, s, onResponse) { proxyHls(r, s, transcoder, source, onResponse); });
+    proxyHls(req, res, transcoder, source);
+}
+
+function hlsStartSession(req) {
+    // The conversion session of an init or early segment request, the part the TV pipeline reads twice at every start
+    var match = HLS_START_PATH.exec(req.url);
+    if (!answerSettings.enabled || req.method !== 'GET' || !match) return null;
+    return !match[2] || parseInt(match[2], 10) <= (answerSettings.hlsStart || {}).segments ? match[1] : null;
+}
+
+function shareAnswer(req, res, cache, group, send) {
+    // Serve a repeated request from one upstream answer kept in RAM, fetching it once when it is not there
+    var key = req.url + '|' + (req.headers.range || '');
+    if (cache.serve(key, res)) return;
+    var refetch = function(waiter) { send(req, waiter); };
+    cache.begin(key, group);
+    // Headers sent without an answer to copy mean the upstream failed; a caller that only hung up leaves the request running for the waiters
+    res.on('close', function() { if (res.headersSent) cache.abandon(key, refetch); });
+    send(req, res, function(proxyRes) { cache.capture(key, proxyRes, res, refetch); });
 }
 
 function alternateTranscoder(current, source) {
@@ -862,7 +895,7 @@ function alternateTranscoder(current, source) {
     return other && other.host !== current.host ? other : null;
 }
 
-function proxyHls(req, res, transcoder, source) {
+function proxyHls(req, res, transcoder, source, onResponse) {
     // Forward an HLS request; a converter that fails before answering hands the request, and the rest of the session, to the other converter
     var id = (/^\/hlsv2\/([^/?]+)/.exec(req.url) || [])[1];
     var moved = false;
@@ -872,12 +905,13 @@ function proxyHls(req, res, transcoder, source) {
         moved = true;
         console.warn('hls', id, 'failed on', transcoder.host, '(' + reason + '), moving to', other.host);
         if (id && id !== 'probe') hlsSessions[id] = other;
-        proxyRequest(req, res, other, source);
+        proxyRequest(req, res, other, source, null, onResponse);
         return true;
     };
     var opts = { hostname: transcoder.hostname, port: transcoder.port, path: rewriteLoopback(req.url, transcoder, source), method: req.method, headers: req.headers };
     var proxy = http.request(opts, function(proxyRes) {
         if (proxyRes.statusCode >= 500 && moveOn('HTTP ' + proxyRes.statusCode)) return proxyRes.resume();
+        if (onResponse) return onResponse(proxyRes);
         res.writeHead(proxyRes.statusCode, proxyRes.headers);
         proxyRes.pipe(res);
     });
@@ -887,8 +921,14 @@ function proxyHls(req, res, transcoder, source) {
         res.writeHead(502);
         res.end();
     });
-    // Release the upstream request as soon as the player closes its side, unless the request already moved
-    res.on('close', function() { if (!moved) proxy.destroy(); });
+    // Release the upstream request as soon as the player closes its side, unless it moved or its answer is shared with other callers
+    res.on('close', function() { if (!moved && !onResponse) proxy.destroy(); });
+    sendBody(req, proxy);
+}
+
+function sendBody(req, proxy) {
+    // Forward the caller's body, or just finish the upstream request when it was already read for an earlier attempt
+    if (req.readableEnded) return proxy.end();
     req.pipe(proxy);
 }
 
@@ -913,10 +953,11 @@ function trackStream(res) {
     res.on('close', release);
 }
 
-function proxyRequest(req, res, target, source, path) {
+function proxyRequest(req, res, target, source, path, onResponse) {
     // Forward the request to the chosen server, rewriting media URLs it must read from the source
     var opts = { hostname: target.hostname, port: target.port, path: rewriteLoopback(path || req.url, target, source), method: req.method, headers: req.headers };
     var proxy = http.request(opts, function(proxyRes) {
+        if (onResponse) return onResponse(proxyRes);
         res.writeHead(proxyRes.statusCode, proxyRes.headers);
         proxyRes.pipe(res);
     });
@@ -926,9 +967,9 @@ function proxyRequest(req, res, target, source, path) {
         res.writeHead(502);
         res.end();
     });
-    // Release the upstream request as soon as the player closes its side
-    res.on('close', function() { proxy.destroy(); });
-    req.pipe(proxy);
+    // Release the upstream request as soon as the player closes its side, unless its answer is shared with other callers
+    res.on('close', function() { if (!onResponse) proxy.destroy(); });
+    sendBody(req, proxy);
 }
 
 function subsyncServer(source) {
@@ -962,7 +1003,7 @@ function serveStatus(res) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     var transcoder = pickTranscoder(upstream);
     var subsync = subsyncServer(upstream);
-    res.end(JSON.stringify({ upstream: url.format(upstream), candidates: serverStatus, transcoder: transcoder ? url.format(transcoder) : null, subsync: subsync ? url.format(subsync) : null, fallback: remoteFallback(), routes: routes, activeStreams: activeStreams, readAhead: readAhead.status(), mirrors: Object.keys(mirrors).reduce(function(all, p) { all[p] = mirrors[p].map(function(m) { return m.path + '@' + m.server.host; }); return all; }, {}) }));
+    res.end(JSON.stringify({ upstream: url.format(upstream), candidates: serverStatus, transcoder: transcoder ? url.format(transcoder) : null, subsync: subsync ? url.format(subsync) : null, fallback: remoteFallback(), routes: routes, activeStreams: activeStreams, readAhead: readAhead.status(), answerCache: { enabled: answerSettings.enabled !== false, meta: metaAnswers.status(), hlsStart: hlsStartAnswers.status() }, mirrors: Object.keys(mirrors).reduce(function(all, p) { all[p] = mirrors[p].map(function(m) { return m.path + '@' + m.server.host; }); return all; }, {}) }));
 }
 
 // Single server, reachable from this TV only since its routes change settings and read logs: tweaks routes, static files, then the streaming proxy
