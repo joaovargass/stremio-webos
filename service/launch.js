@@ -851,9 +851,45 @@ function proxyToStreaming(req, res) {
     traceRequest(req, res, 'hls');
     // HLS conversion needs ffmpeg; answer at once when no server can convert so the player moves on
     var transcoder = transcoderFor(req, source);
-    if (transcoder) return proxyRequest(req, res, transcoder, source);
+    if (transcoder) return proxyHls(req, res, transcoder, source);
     res.writeHead(503, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'no transcoder available' }));
+}
+
+function alternateTranscoder(current, source) {
+    // The other converter for a failed HLS request: the LAN server when the TV failed, the TV when the LAN server failed
+    var other = isLocal(current) ? lanTranscoder(source) : localTranscoder();
+    return other && other.host !== current.host ? other : null;
+}
+
+function proxyHls(req, res, transcoder, source) {
+    // Forward an HLS request; a converter that fails before answering hands the request, and the rest of the session, to the other converter
+    var id = (/^\/hlsv2\/([^/?]+)/.exec(req.url) || [])[1];
+    var moved = false;
+    var moveOn = function(reason) {
+        var other = req.method === 'GET' && !moved && !res.headersSent ? alternateTranscoder(transcoder, source) : null;
+        if (!other) return false;
+        moved = true;
+        console.warn('hls', id, 'failed on', transcoder.host, '(' + reason + '), moving to', other.host);
+        if (id && id !== 'probe') hlsSessions[id] = other;
+        proxyRequest(req, res, other, source);
+        return true;
+    };
+    var opts = { hostname: transcoder.hostname, port: transcoder.port, path: rewriteLoopback(req.url, transcoder, source), method: req.method, headers: req.headers };
+    var proxy = http.request(opts, function(proxyRes) {
+        if (proxyRes.statusCode >= 500 && moveOn('HTTP ' + proxyRes.statusCode)) return proxyRes.resume();
+        res.writeHead(proxyRes.statusCode, proxyRes.headers);
+        proxyRes.pipe(res);
+    });
+    proxy.on('error', function(err) {
+        if (moveOn(err.code || err.message)) return;
+        if (res.headersSent) return res.destroy();
+        res.writeHead(502);
+        res.end();
+    });
+    // Release the upstream request as soon as the player closes its side, unless the request already moved
+    res.on('close', function() { if (!moved) proxy.destroy(); });
+    req.pipe(proxy);
 }
 
 function traceRequest(req, res, label) {
