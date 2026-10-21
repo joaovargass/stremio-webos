@@ -75,6 +75,8 @@
         busy = true;
         var query = 'media=' + encodeURIComponent(video.currentSrc) + '&sub=' + encodeURIComponent(track.url) + '&at=' + Math.floor(video.currentTime);
         fetch('/__tweaks/subsync?' + query).then(function (resp) {
+            // No sync server (503) and a sync server that does not answer (502) both mean the Mac service is missing
+            if (resp.status === 502 || resp.status === 503) return { status: 503, body: null };
             return resp.json().then(function (body) { return { status: resp.status, body: body }; });
         }).then(function (r) {
             busy = false;
