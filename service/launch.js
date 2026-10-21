@@ -112,23 +112,67 @@ function remoteFallback() {
     return candidates.filter(function(candidate) { return serverStatus[candidate] && !isLocal(url.parse(candidate)); })[0] || null;
 }
 
+function setRoute(hash, target) {
+    // Serve one torrent from a server, or from the default upstream when target is null; true when the player does not notice
+    if (target) routes[hash] = target;
+    else delete routes[hash];
+    // The open memory window continues from the new server at the next byte, so the player keeps playing untouched
+    var seamless = readAhead.reroute(hash, target ? url.parse(target) : upstream);
+    // Only this torrent's own window is dropped; a video playing from another file keeps its buffer
+    if (!seamless) readAhead.resetFor(hash);
+    console.log('route', hash, '->', target || 'default', seamless ? '(seamless)' : '');
+    return seamless;
+}
+
 function serveRoute(reqUrl, res) {
     // Move one torrent to the remote fallback server, or back to the default upstream
     var query = url.parse(reqUrl, true).query;
     var hash = String(query.hash || '').toLowerCase();
     var target = query.to === 'remote' ? remoteFallback() : null;
-    var seamless = false;
-    if (/^[0-9a-f]{40}$/.test(hash)) {
-        if (target) routes[hash] = target;
-        else delete routes[hash];
-        // The open memory window continues from the new server at the next byte, so the player keeps playing untouched
-        seamless = readAhead.reroute(hash, target ? url.parse(target) : upstream);
-        // Only this torrent's own window is dropped; a video playing from another file keeps its buffer
-        if (!seamless) readAhead.resetFor(hash);
-        console.log('route', hash, '->', target || 'default', seamless ? '(seamless)' : '');
-    }
+    var seamless = /^[0-9a-f]{40}$/.test(hash) ? setRoute(hash, target) : false;
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ hash: hash, server: target, seamless: seamless, routes: routes }));
+}
+
+function readRange(server, filePath, range, done) {
+    // Read and discard a byte range so the server downloads it; done gets the file size from Content-Range, or null
+    var finish = once(done);
+    var req = http.get({ hostname: server.hostname, port: server.port, path: filePath, headers: { Range: 'bytes=' + range[0] + '-' + range[1] } }, function(res) {
+        var total = /\/(\d+)$/.exec(res.headers['content-range'] || '');
+        res.on('end', function() { finish(total ? parseInt(total[1], 10) : null); });
+        res.resume();
+    });
+    req.setTimeout((tweaks.prewarm || {}).timeoutMs || 120000, function() { req.destroy(); });
+    req.on('error', function() { finish(null); });
+}
+
+function warmTorrent(hash, server, query) {
+    // Seed the peer sources, then read the configured bytes at the requested position of the file
+    var bytes = (tweaks.prewarm || {}).warmBytes || 1048576;
+    var filePath = '/' + hash + '/' + (parseInt(query.idx, 10) || 0);
+    var fraction = Math.min(Math.max(parseFloat(query.at) || 0, 0), 0.99);
+    var log = function(total) { console.log('warmed', hash, 'at', Math.round(fraction * 100) + '%', 'on', server.host, total ? '' : '(no answer)'); };
+    seedPeers(hash, server, function() {
+        if (!fraction) return readRange(server, filePath, [0, bytes - 1], log);
+        // A position inside the file needs its size first; a one-byte read answers with it
+        readRange(server, filePath, [0, 0], function(total) {
+            var from = Math.floor((total || 0) * fraction);
+            if (total) readRange(server, filePath, [from, Math.min(from + bytes, total) - 1], log);
+        });
+    });
+}
+
+function serveWarm(reqUrl, res) {
+    // Start a torrent and fetch its bytes at a position inside the service, so the page keeps its few connections for playback
+    var query = url.parse(reqUrl, true).query;
+    var hash = String(query.hash || '').toLowerCase();
+    var valid = /^[0-9a-f]{40}$/.test(hash);
+    // A source that will play from the Mac starts and warms there
+    if (valid && query.lan === '1' && remoteFallback() && !routes[hash]) setRoute(hash, remoteFallback());
+    var server = sourceFor('/' + hash + '/');
+    res.writeHead(valid ? 202 : 400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ hash: hash, server: url.format(server) }));
+    if (valid) warmTorrent(hash, server, query);
 }
 
 function once(fn) {
@@ -397,6 +441,7 @@ http.createServer(function(req, res) {
     var urlPath = req.url.split('?')[0];
     if (urlPath === '/__tweaks/status') return serveStatus(res);
     if (urlPath === '/__tweaks/route') return serveRoute(req.url, res);
+    if (urlPath === '/__tweaks/warm') return serveWarm(req.url, res);
     if (urlPath === '/__tweaks/subsync') return serveSubsync(req, res);
     if (urlPath === '/__tweaks/overrides' && req.method === 'POST') return serveOverrides(req, res);
     serveStatic(urlPath, res, function() { proxyToStreaming(req, res); });
