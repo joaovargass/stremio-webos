@@ -4,6 +4,7 @@
 // video's original language). Parameters come from window.STREMIO_TWEAKS.subtitles.
 (function () {
     var config = (window.STREMIO_TWEAKS || {}).subtitles || {};
+    var simple = (window.STREMIO_TWEAKS || {}).simple || {};
     var LANG_GROUPS = {
         'pt-br': ['pob', 'pt-br', 'pt_br', 'ptbr', 'pb', 'brazilian', 'portuguese (brazil)', 'português (brasil)'],
         pt: ['por', 'pt', 'pt-pt', 'portuguese', 'português']
@@ -143,7 +144,18 @@
         merged.sort(function (a, b) {
             return rank(a.lang, native) - rank(b.lang, native) || scoreOf(b) - scoreOf(a) || a.__order - b.__order;
         });
-        return Object.assign({}, state, { subtitles: merged.map(prettify) });
+        return Object.assign({}, state, { subtitles: (simple.enabled ? bestPerLanguage(merged) : merged).map(prettify) });
+    }
+
+    function bestPerLanguage(tracks) {
+        // Simple mode keeps the best track of each language, in preference order, up to the configured count
+        var seen = {};
+        return tracks.filter(function (track) {
+            var lang = baseLang(track.lang);
+            if (seen[lang] || Object.keys(seen).length >= (simple.subtitleChoices || 3)) return false;
+            seen[lang] = true;
+            return true;
+        });
     }
 
     function matches(track, wanted, native) {
@@ -210,6 +222,48 @@
         window.__stremioSubPick = null;
     }
 
+    function toast(text) {
+        // Short notice in the shared toast
+        if (!window.__stremioToast) return;
+        window.__stremioToast.show(text);
+        clearTimeout(toast.timer);
+        toast.timer = setTimeout(window.__stremioToast.hide, 2500);
+    }
+
+    function cycleChoices(state) {
+        // Embedded tracks first (non-SDH, preferred languages first), then the external list, then off
+        var native = window.__stremioNativeLang || null;
+        var embedded = (state.subtitlesTracks || []).slice().sort(function (a, b) {
+            return isSdh(a) - isSdh(b) || rank(a.lang, native) - rank(b.lang, native);
+        }).map(function (t) { return { id: t.id, kind: 'embedded', label: (LABELS[baseLang(t.lang)] || t.lang) + ' · embutida' + (isSdh(t) ? ' (SDH)' : '') }; });
+        var extra = (state.extraSubtitlesTracks || []).map(function (t) { return { id: t.id, kind: 'extra', label: t.label || t.lang }; });
+        return embedded.concat(extra).concat([{ id: null, kind: 'off', label: 'desligada' }]);
+    }
+
+    function cycleSubtitles() {
+        // Move to the next subtitle choice and say which one is on
+        var video = window.__stremioPlayerVideo;
+        if (!video || !video.state) return;
+        var state = typeof video.state === 'function' ? video.state() : video.state;
+        var choices = cycleChoices(state);
+        var current = state.selectedSubtitlesTrackId || state.selectedExtraSubtitlesTrackId || null;
+        var index = -1;
+        choices.forEach(function (c, i) { if (index === -1 && c.id === current) index = i; });
+        var next = choices[(index + 1) % choices.length];
+        if (next.kind === 'embedded') video.selectSubtitlesTrack(next.id);
+        else if (next.kind === 'extra') video.selectExtraSubtitlesTrack(next.id);
+        else video.disableSubtitlesTracks();
+        toast('Legenda: ' + next.label);
+    }
+
+    // The configured remote key cycles subtitles on the player
+    window.addEventListener('keydown', function (e) {
+        if (!config.enabled || e.keyCode !== config.cycleKey || (location.hash || '').indexOf('#/player') !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        cycleSubtitles();
+    }, true);
+
     // The app router navigates with pushState and announces it as historyChange
     window.addEventListener('hashchange', onRouteChange);
     window.addEventListener('historyChange', onRouteChange);
@@ -217,5 +271,5 @@
     // The Netflix-like look is a stylesheet switch on the root element
     if (config.enabled && config.netflixStyle !== false) document.documentElement.classList.add('twk-netflix-subs');
 
-    window.__stremioSubs = { enhancePlayer: enhancePlayer, baseLang: baseLang, scoreOf: scoreOf, cache: extraCache };
+    window.__stremioSubs = { enhancePlayer: enhancePlayer, baseLang: baseLang, scoreOf: scoreOf, cycle: cycleSubtitles, cache: extraCache };
 })();
