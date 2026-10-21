@@ -190,7 +190,9 @@ function pickTranscoder(source, heavy) {
 function transcoderFor(req, source) {
     // Every request of one HLS session goes to the server that started it
     var id = (/^\/hlsv2\/([^/?]+)/.exec(req.url) || [])[1];
-    if (id && id !== 'probe' && hlsSessions[id]) return hlsSessions[id];
+    var pinned = id && id !== 'probe' ? hlsSessions[id] : null;
+    // A session stays on its server only while that server may still be used: the TV, or a LAN server that answers and is allowed
+    if (pinned && (isLocal(pinned) || (serverStatus[url.format(pinned)] && allowed(url.format(pinned))))) return pinned;
     var target = pickTranscoder(source, /[?&]forceTranscoding=/.test(req.url));
     if (id && id !== 'probe' && target) {
         hlsSessions[id] = target;
