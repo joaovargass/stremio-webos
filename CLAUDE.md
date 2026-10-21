@@ -35,7 +35,8 @@ service/              # webOS service
   webos-sources.js    # Source picker (player button and green key)
   webos-settings.js   # On/off switches for every tweak (yellow key)
   webos-diag.js       # Diagnostics panel opened from the player control bar
-  webos-ui.css        # Styles for the toast, panels, hint and subtitles
+  webos-ui.css        # Styles for every tweak UI, all on the shared :root design tokens (colours, type, radii, motion)
+  webos-debug.js      # On-screen log: time, level, area, sentence; detail setting debug.detail (essential, detailed, everything)
   package.json        # Service manifest (main: launch.js)
   services.json       # Luna service registration
   server.js           # [downloaded] Official Stremio streaming server

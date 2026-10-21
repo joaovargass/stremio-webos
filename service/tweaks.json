@@ -242,9 +242,9 @@
     },
     "debug": {
         "overlay": true,
-        "lines": 12,
-        "pollMs": 1000,
-        "hideService": "^(hls-converter - (Testing|Tests|Some tests)|-> |Resizing cache)"
+        "detail": "detailed",
+        "lines": 10,
+        "pollMs": 1000
     },
     "subtitles": {
         "enabled": true,

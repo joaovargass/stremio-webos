@@ -15,6 +15,7 @@
     --twk-accent-focus: rgba(123, 91, 245, 0.22);
     --twk-surface: rgba(12, 12, 16, 0.95);
     --twk-surface-raised: rgba(20, 20, 24, 0.94);
+    --twk-surface-solid: #0c0c10;
     --twk-line: #2a2a2d;
     --twk-good: #4fd18b;
     --twk-warn: #f5c518;
@@ -208,6 +209,7 @@
 
 .twk-sources.twk-visible,
 .twk-settings.twk-visible,
+.twk-logview.twk-visible,
 .twk-visible .twk-close {
     pointer-events: auto;
 }
@@ -333,28 +335,168 @@
     text-shadow: 0 0 0.06em #000000, 0 0 0.12em rgba(0, 0, 0, 0.9), 0 0.08em 0.24em rgba(0, 0, 0, 0.85) !important;
 }
 
-/* On-screen debug log: a corner box above the video, below every panel, never focusable */
+/* On-screen debug log: a corner card above the video, below every panel, never focusable; it fades out while a panel is open */
 
 .twk-debug {
     position: fixed;
-    left: 1.2vw;
-    bottom: 16vh;
-    width: 70vw;
-    padding: 0.8vh 0.8vw;
-    border-radius: var(--twk-radius-s);
-    background: rgba(0, 0, 0, 0.62);
-    color: var(--twk-text-soft);
-    font-family: Menlo, Consolas, monospace;
-    font-size: 1.35vh;
+    left: 2vw;
+    bottom: 12vh;
+    width: 52vw;
+    padding: 1.2vh 1vw;
+    border-radius: var(--twk-radius-m);
+    background: var(--twk-surface-raised);
+    border: 1px solid var(--twk-line);
+    box-shadow: var(--twk-shadow);
+    color: var(--twk-text);
+    font-family: var(--twk-font);
+    font-size: 1.45vh;
     line-height: 1.35;
+    font-variant-numeric: tabular-nums;
     z-index: var(--twk-z-debug);
     pointer-events: none;
+    transition: opacity 220ms ease;
+}
+
+.twk-debug.twk-debug-hidden {
+    opacity: 0;
 }
 
 .twk-debug-line {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6vw;
+    padding: 0.3vh 0;
+}
+
+.twk-debug-line + .twk-debug-line {
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.twk-debug-time,
+.twk-debug-area {
+    flex: none;
+    color: var(--twk-faint);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Fixed columns keep every sentence starting at the same place */
+.twk-debug-area {
+    width: 6.5vw;
     overflow: hidden;
-    white-space: nowrap;
     text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.twk-debug-level {
+    flex: none;
+    width: 4.2vw;
+    padding: 0.1vh 0;
+    border-radius: 0.6vh;
+    font-size: 1.15vh;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-align: center;
+}
+
+.twk-debug-error { background: rgba(255, 107, 107, 0.18); color: var(--twk-bad); }
+.twk-debug-warn { background: rgba(245, 197, 24, 0.16); color: var(--twk-warn); }
+.twk-debug-action { background: rgba(79, 209, 139, 0.16); color: var(--twk-good); }
+.twk-debug-info { background: var(--twk-accent-soft); color: var(--twk-accent-text); }
+.twk-debug-verbose { background: rgba(255, 255, 255, 0.06); color: var(--twk-faint); }
+
+/* A long message wraps to two lines instead of being cut off */
+.twk-debug-text {
+    min-width: 0;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    word-break: break-word;
+}
+
+/* A full-screen reader over another panel is opaque, and the panel below is not drawn while it is open: screens never overlap */
+html[data-twk-top="logview"] .twk-diag.twk-visible:not(.twk-logview) {
+    visibility: hidden;
+}
+
+.twk-logview {
+    background: var(--twk-surface-solid);
+    top: 5vh;
+    right: 4vw;
+    left: 4vw;
+    display: flex;
+    flex-direction: column;
+    width: auto;
+    height: 90vh;
+    max-height: 90vh;
+    padding: 1.8vh 1.6vw;
+}
+
+.twk-logview-header {
+    flex: none;
+}
+
+.twk-logview-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.8vw;
+}
+
+.twk-logview-controls button {
+    padding: 0.8vh 1vw;
+    border: 1px solid var(--twk-line);
+    border-radius: var(--twk-radius-s);
+    background: var(--twk-surface-raised);
+    color: var(--twk-text);
+    font: inherit;
+    cursor: pointer;
+}
+
+.twk-logview-controls button:focus,
+.twk-logview-controls button:hover {
+    outline: 2px solid var(--twk-accent);
+    background: var(--twk-accent-soft);
+}
+
+.twk-logview-close {
+    margin-left: 0;
+}
+
+.twk-logview-counter {
+    flex: none;
+    margin-bottom: 1vh;
+    color: var(--twk-muted);
+    font-size: 1.5vh;
+}
+
+.twk-logview-scroll {
+    min-height: 0;
+    flex: 1;
+    overflow: auto;
+    border: 1px solid var(--twk-line);
+    border-radius: var(--twk-radius-s);
+    background: rgba(0, 0, 0, 0.2);
+    outline: none;
+}
+
+.twk-logview-scroll:focus {
+    border-color: var(--twk-accent);
+}
+
+.twk-logview-row {
+    align-items: flex-start;
+    padding: 0.75vh 0.8vw;
+}
+
+.twk-logview-text {
+    display: block;
+    overflow: visible;
+    min-width: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    -webkit-line-clamp: unset;
+    -webkit-box-orient: initial;
 }
 
 /* Loading hint */

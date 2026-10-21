@@ -62,18 +62,38 @@ function keepLogs() {
         var original = console[level].bind(console);
         console[level] = function() {
             // Formatted like the console itself, so objects and errors read as their content
-            logLines.push({ n: ++logSeq, at: Date.now(), level: level, text: util.format.apply(util, arguments) });
+            logLines.push({ n: ++logSeq, at: Date.now(), level: level, text: safeLogText(util.format.apply(util, arguments)) });
             if (logLines.length > 300) logLines.shift();
             original.apply(null, arguments);
         };
     });
 }
 
+function safeLogText(text) {
+    // Credentials and personal data never reach the log; media paths stay, since they are what a diagnosis needs
+    return String(text)
+        .replace(/\b(https?:\/\/)([^/\s?#@]+(?::[^/@\s?#]*)?@)/gi, '$1[REDACTED]@')
+        .replace(/([?&](?:access_token|token|key|auth|password|profile|sessionToken|from)=)[^&\s]+/gi, '$1[REDACTED]')
+        .replace(/\bBearer\s+[^\s]+/gi, 'Bearer [REDACTED]')
+        .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[EMAIL]');
+}
+
 function serveLogs(reqUrl, res) {
-    // Service log lines newer than the given sequence number
-    var since = parseInt(url.parse(reqUrl, true).query.since, 10) || 0;
+    // Filter a copy of the complete ring; keep the global sequence so hidden lines do not repeat
+    var query = url.parse(reqUrl, true).query;
+    var since = query.since === undefined ? 0 : Number(query.since);
+    var detail = query.detail === undefined ? (tweaks.debug || {}).detail || 'detailed' : query.detail;
+    var ranks = { error: 0, warn: 0, log: 1, info: 1, verbose: 2 };
+    var maxRank = { essential: 0, detailed: 1, everything: 2 }[detail];
+    if (query.since === '' || !isFinite(since) || since < 0 || Math.floor(since) !== since || maxRank === undefined) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Invalid log cursor or detail level' }));
+    }
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ last: logSeq, lines: logLines.filter(function(line) { return line.n > since; }) }));
+    res.end(JSON.stringify({ last: logSeq, lines: logLines.filter(function(line) {
+        var rank = ranks[line.level] === undefined ? 1 : ranks[line.level];
+        return line.n > since && rank <= maxRank;
+    }) }));
 }
 
 function familyOf(net) {
@@ -149,6 +169,10 @@ function serveOverrides(req, res) {
         tweaks.devMode = tweaks.devMode || {};
         if (typeof overrides['devMode.keepAlive'] === 'boolean') tweaks.devMode.keepAlive = overrides['devMode.keepAlive'];
         if (typeof overrides['answerCache.enabled'] === 'boolean') answerSettings.enabled = overrides['answerCache.enabled'];
+        if (['essential', 'detailed', 'everything'].indexOf(overrides['debug.detail']) !== -1) {
+            tweaks.debug = tweaks.debug || {};
+            tweaks.debug.detail = overrides['debug.detail'];
+        }
         if (!lanAllowed()) {
             routes = {};
             selectUpstream();
