@@ -21,6 +21,7 @@
     var lanLost = {};
     var prepared = {};
     var prerouted = {};
+    var announced = {};
     var lastProxy = null;
     var lastHash = null;
     var struggleSince = null;
@@ -177,16 +178,14 @@
         var hash = next.infoHash ? next.infoHash.toLowerCase() : null;
         var proxy = lastProxy;
         var currentOnLan = !!(proxy && lastHash && (proxy.routes || {})[lastHash]);
-        var lan = config.prewarmOnLan !== false && hash && proxy && proxy.fallback && !(proxy.routes || {})[hash] && (currentOnLan || heavyForTv(hash));
-        var routed = lan ? fetch('/__tweaks/route?hash=' + hash + '&to=remote').then(function () {
-            // The race then measures and later plays this source on the Mac, where it was warmed
+        var lan = !!(config.prewarmOnLan !== false && hash && proxy && proxy.fallback && !(proxy.routes || {})[hash] && (currentOnLan || heavyForTv(hash)));
+        // The race then measures and later plays this source on the Mac, where it was warmed
+        if (lan) {
             prerouted[hash] = true;
             rerouted[hash] = true;
-        }).catch(function () {}) : Promise.resolve();
-        routed.then(function () {
-            console.info('[doctor] preparing a source in the background', next.infoHash || next.url, Math.round(fraction * 100) + '%', lan ? 'on the Mac' : '');
-            window.__stremioTweaks.prewarm(next, fraction);
-        });
+        }
+        console.info('[doctor] preparing a source in the background', next.infoHash || next.url, Math.round(fraction * 100) + '%', lan ? 'on the Mac' : '');
+        window.__stremioTweaks.prewarm(next, fraction, lan);
     }
 
     function prepareNext(video) {
@@ -215,6 +214,7 @@
         var title = short || String(stream.description || stream.title || '').split('\n').filter(function (l) { return l && l.indexOf('⭐') !== 0 && l.indexOf('⚠') !== 0; })[0] || 'próxima fonte';
         // Say when the new source comes from the Mac, as every other Mac use is announced
         var viaMac = stream.infoHash && prerouted[stream.infoHash.toLowerCase()] ? ' · pelo Mac' : '';
+        if (viaMac) announced[stream.infoHash.toLowerCase()] = true;
         toast(prefix + title.slice(0, 70) + viaMac, 5000);
         stalledSince = null;
         loadingSince = null;
@@ -260,6 +260,7 @@
         var local = !proxy.routes || !proxy.routes[hash];
         if (!hash || !proxy.fallback || !local || rerouted[hash] || /^https?:\/\/(?!127\.|localhost)/.test(proxy.upstream)) return false;
         rerouted[hash] = true;
+        announced[hash] = true;
         console.warn('[doctor] rerouting', hash, 'to', proxy.fallback, reason);
         toast('Usando o Mac para esta fonte (' + reason + ')', 6000);
         fetch('/__tweaks/route?hash=' + hash + '&to=remote').then(function (r) { return r.json(); }).then(function (route) {
@@ -307,6 +308,11 @@
         if (routedTo && (proxy.candidates || {})[routedTo] === false && !lanLost[hash]) {
             lanLost[hash] = true;
             toast('O Mac parou de responder: este vídeo voltou para a TV', 6000);
+        }
+        // A source already warmed on the Mac (heavy for the TV) starts there; say so once, as every Mac use is announced
+        if (routedTo && (proxy.candidates || {})[routedTo] !== false && !announced[hash]) {
+            announced[hash] = true;
+            toast('Esta fonte vem do Mac (pesada para a TV)', 5000);
         }
         state.playerBufferS = playerBuffer(video);
         state.ramBufferS = needed ? ramBytes / needed : 0;
@@ -473,6 +479,7 @@
         currentStream: currentStream,
         sameStream: sameStream,
         sourceTorrent: function (src) { return TORRENT_URL.exec(src) || hlsSourceTorrent(src); },
+        heavyForTv: heavyForTv,
         state: state
     };
 })();

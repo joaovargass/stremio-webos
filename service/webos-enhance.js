@@ -45,8 +45,8 @@
             .catch(function (err) { console.warn('[tweaks] server selection failed', err); });
     }
 
-    function prewarm(stream, fraction) {
-        // Start a torrent and fetch its bytes at a position (the start by default) so a later play begins at once
+    function prewarm(stream, fraction, onLan) {
+        // Start a torrent and fetch its bytes at a position (the start by default) so a later play begins at once; onLan warms it on the Mac
         var settings = config.prewarm || {};
         var base = config.servers && config.servers.coreUrl;
         var key = stream && stream.infoHash + '@' + Math.round((fraction || 0) * 100);
@@ -54,7 +54,11 @@
         prewarmed[key] = true;
         var url = base.replace(/\/$/, '') + '/' + stream.infoHash + '/' + (stream.fileIdx || 0);
         var bytes = settings.warmBytes || 1048576;
-        boostTorrent(url).then(function () {
+        // The route comes first, so the torrent starts and warms where it will later play
+        var routed = onLan ? fetch('/__tweaks/route?hash=' + stream.infoHash.toLowerCase() + '&to=remote').catch(function () {}) : Promise.resolve();
+        routed.then(function () {
+            return boostTorrent(url);
+        }).then(function () {
             // A position inside the file needs its size first; a one-byte read answers with it
             if (!fraction) return 0;
             return fetch(url, { headers: { Range: 'bytes=0-0' } }).then(function (resp) {
@@ -185,6 +189,13 @@
         return { score: score, warnings: warnings };
     }
 
+    function startsOnLan(stream) {
+        // A heavy source starts on the Mac when one answers and the doctor learned the TV cannot sustain it
+        var doctor = window.__stremioDoctor;
+        return !!(stream && stream.infoHash && doctor && (config.doctor || {}).startOnLanWhenHeavy !== false &&
+            (config.servers || {}).useLan !== false && window.__stremioLanAvailable === true && doctor.heavyForTv(stream.infoHash.toLowerCase()));
+    }
+
     function rankMetaDetails(state) {
         // Sort streams inside each addon group, then groups by their best stream
         var rank = config.ranking;
@@ -227,8 +238,9 @@
                 return true;
             })) : list;
         }, []);
-        // Warm the recommended torrent only on the title page, where the click to play happens
-        if ((location.hash || '').indexOf('#/detail') === 0) prewarm(window.__stremioRankedStreams[0]);
+        // Warm the recommended torrent only on the title page, where the click to play happens, on the Mac when the TV cannot sustain it
+        var recommended = window.__stremioRankedStreams[0];
+        if ((location.hash || '').indexOf('#/detail') === 0) prewarm(recommended, 0, startsOnLan(recommended));
         var top = groups[0];
         if (top && top.best > 0) {
             var first = top.group.content.content[0];
