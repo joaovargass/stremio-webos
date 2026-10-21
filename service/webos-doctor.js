@@ -26,25 +26,28 @@
     var struggleSince = null;
     var progress = [];
     var race = { videoId: null, list: [], best: null };
-    var learned = readTvRate();
-    var learnedSavedAt = 0;
+    var rates = { tv: { key: 'twk.tvRate', savedAt: 0 }, lan: { key: 'twk.lanRate', savedAt: 0 } };
+    rates.tv.value = readRate(rates.tv.key);
+    rates.lan.value = readRate(rates.lan.key);
+    var learned = rates.tv.value;
 
-    function readTvRate() {
-        // Learned download rate of the TV's own server: { rate: bytes per second, n: samples }
+    function readRate(key) {
+        // Learned download rate of one server: { rate: bytes per second, n: samples }
         try {
-            return JSON.parse(localStorage.getItem('twk.tvRate') || 'null') || { rate: 0, n: 0 };
+            return JSON.parse(localStorage.getItem(key) || 'null') || { rate: 0, n: 0 };
         } catch (_e) {
             return { rate: 0, n: 0 };
         }
     }
 
-    function learnTvRate(speed) {
-        // Moving average of what the TV server delivers while the player is hungry, saved every 30 s
-        learned.rate = learned.n ? learned.rate * 0.95 + speed * 0.05 : speed;
-        learned.n++;
-        if (Date.now() - learnedSavedAt < 30000) return;
-        learnedSavedAt = Date.now();
-        try { localStorage.setItem('twk.tvRate', JSON.stringify(learned)); } catch (_e) {}
+    function learnRate(slot, speed) {
+        // Moving average of what one server delivers while the player is hungry, saved every 30 s
+        var learnedRate = slot.value;
+        learnedRate.rate = learnedRate.n ? learnedRate.rate * 0.95 + speed * 0.05 : speed;
+        learnedRate.n++;
+        if (Date.now() - slot.savedAt < 30000) return;
+        slot.savedAt = Date.now();
+        try { localStorage.setItem(slot.key, JSON.stringify(learnedRate)); } catch (_e) {}
     }
 
     function toast(text, hideAfterMs) {
@@ -314,8 +317,10 @@
         // Once a picture has played, switches become rare: the viewer is watching
         if (video.currentTime > 1 && video.readyState >= 3) state.started[currentVideoId()] = true;
         var onTv = !!proxy && /^https?:\/\/(127\.|localhost)/.test(proxy.upstream) && !(proxy.routes || {})[hash];
-        // Only a hungry player shows what the TV server can deliver
-        if (config.learnTvSpeed !== false && onTv && hash && playing && speed > 0 && state.playerBufferS < 20) learnTvRate(speed);
+        // Only a hungry player shows what its server can deliver: the TV for its own videos, the Mac for routed ones
+        var hungry = hash && playing && speed > 0 && state.playerBufferS < 20;
+        if (config.learnTvSpeed !== false && onTv && hungry) learnRate(rates.tv, speed);
+        if (config.learnLanSpeed !== false && !onTv && proxy && hungry) learnRate(rates.lan, speed);
         // A frozen picture: the viewer wants playback, the playhead does not move and the player waits for data
         var advancing = lastTime === null || video.currentTime > lastTime + 0.2;
         lastTime = video.currentTime;

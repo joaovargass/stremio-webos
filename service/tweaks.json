@@ -166,6 +166,7 @@
         "raceCandidates": 2,
         "targetBufferS": 120,
         "learnTvSpeed": true,
+        "learnLanSpeed": true,
         "startOnLanWhenHeavy": true,
         "graceMs": 60000,
         "prewarmNext": true,
