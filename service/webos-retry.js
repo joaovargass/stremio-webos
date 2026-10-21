@@ -99,7 +99,19 @@
             state.forced = !!force;
             console.warn('[stall-retry] switching to HLS', force ? '(re-encoding the picture)' : '', state.hlsUrl);
             reload(video, state.hlsUrl, resumeAt, currentSrc, 0);
+            confirmSwitch(video, state.hlsUrl, resumeAt);
         });
+    }
+
+    function confirmSwitch(video, url, resumeAt) {
+        // The TV pipeline can ignore a new source while the old one plays; one more load makes the conversion take over
+        setTimeout(function () {
+            if (!video.isConnected || video.getAttribute('src') !== url || video.currentSrc === url) return;
+            console.warn('[stall-retry] the player kept the previous source after the switch, loading the conversion again');
+            video.__twkResumeMs = Math.max(0, Math.round((resumeAt || 0) * 1000));
+            try { video.load(); } catch (_e) {}
+            try { video.play(); } catch (_e) {}
+        }, hlsConfig.switchCheckMs || 3000);
     }
 
     function retryStalled(video, stream, match, resumeAt) {

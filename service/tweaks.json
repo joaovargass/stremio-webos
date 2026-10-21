@@ -88,7 +88,8 @@
         "maxAudioChannels": 6,
         "probeTimeoutMs": 20000,
         "onMissingAudio": true,
-        "audioCheckDelayMs": 1500
+        "audioCheckDelayMs": 1500,
+        "switchCheckMs": 3000
     },
     "ranking": {
         "enabled": true,
