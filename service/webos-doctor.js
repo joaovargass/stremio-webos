@@ -21,6 +21,7 @@
     var lanLost = {};
     var prepared = {};
     var struggleSince = null;
+    var progress = [];
     var learned = readTvRate();
     var learnedSavedAt = 0;
 
@@ -286,6 +287,7 @@
         var loading = video.readyState < 2 && video.currentTime < 0.5;
         loadingSince = loading ? loadingSince || now : null;
         stalledSince = playing && !loading && !video.seeking && !advancing && video.readyState < 3 ? stalledSince || now : null;
+        var choppy = isChoppy(video, now, playing && !loading && !video.seeking);
         // Data the server already holds past the playhead counts as buffer: a finished file never downloads, yet is not slow
         var serverAheadS = stats && stats.streamLen && video.duration ? (stats.streamProgress || 0) * video.duration - video.currentTime : 0;
         state.serverAheadS = Math.max(0, serverAheadS);
@@ -293,7 +295,7 @@
         var low = state.totalBufferS < (config.minBufferS || 10);
         describe(slow, low, needed, !!hash);
         // While playback struggles, get the next ranked source ready at the same position so a switch starts at once
-        struggleSince = (slow && low) || stalledSince || loadingSince ? struggleSince || now : null;
+        struggleSince = (slow && low) || stalledSince || loadingSince || choppy ? struggleSince || now : null;
         if (config.prewarmNext !== false && struggleSince && now - struggleSince > (config.prewarmAfterMs || 15000)) prepareNext(video);
         // A short freeze only earns a hint, never an action; only the hint shown here is hidden here
         var stalledMs = stalledSince ? now - stalledSince : 0;
@@ -309,9 +311,26 @@
             useRemoteServer(video, hash, proxy, 'acima da velocidade da TV');
         } else if (loadingSince && now - loadingSince > (config.startTimeoutMs || 60000)) {
             remedy(video, hash, proxy, 'não começou');
-        } else if (stalledMs > (config.stalledForMs || 45000)) {
-            remedy(video, hash, proxy, 'vídeo travado');
+        } else if (stalledMs > (config.stalledForMs || 45000) || choppy) {
+            progress = [];
+            remedy(video, hash, proxy, choppy ? 'vídeo travando' : 'vídeo travado');
         }
+    }
+
+    function isChoppy(video, now, watching) {
+        // A picture that keeps stopping and starting: over the last stalledForMs it played less than minPlayRatio of real time
+        var last = progress[progress.length - 1];
+        // Not watching, or a jump back by the viewer, restarts the measurement
+        if (!watching || (last && video.currentTime < last.t - 1)) {
+            progress = [];
+            return false;
+        }
+        var span = config.stalledForMs || 45000;
+        progress.push({ at: now, t: video.currentTime });
+        while (progress.length > 1 && now - progress[1].at >= span) progress.shift();
+        var first = progress[0];
+        if (now - first.at < span) return false;
+        return video.currentTime - first.t < (now - first.at) / 1000 * (config.minPlayRatio || 0.5);
     }
 
     function describe(slow, low, needed, torrent) {
@@ -371,6 +390,7 @@
         stalledSince = null;
         loadingSince = null;
         struggleSince = null;
+        progress = [];
         calmUntil = 0;
         setTimeout(showFirstRunHint, 4000);
     }
