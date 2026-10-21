@@ -174,8 +174,8 @@
         "backMb": 4,
         "joinGapMb": 8,
         "idleMs": 60000,
+        "mergeSources": true,
         "mirrors": {
-            "enabled": true,
             "max": 2,
             "maxOnTv": 1,
             "verifyBytes": 65536,

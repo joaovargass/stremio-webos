@@ -249,8 +249,9 @@
 
     function offerMirrors(ranked, current, list) {
         // Torrents of the same release file download later parts in parallel; the service checks size and bytes before merging any
-        var settings = ((window.STREMIO_TWEAKS || {}).readAhead || {}).mirrors || {};
-        if (settings.enabled === false || !current || !current.infoHash) return;
+        var readAhead = (window.STREMIO_TWEAKS || {}).readAhead || {};
+        var settings = readAhead.mirrors || {};
+        if (readAhead.enabled === false || readAhead.mergeSources === false || !current || !current.infoHash) return;
         var entry = ranked.filter(function (s) { return sameStream(s, current); })[0] || current;
         var name = (entry.behaviorHints || {}).filename;
         var height = resolutionOf(entry);

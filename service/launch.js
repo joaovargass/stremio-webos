@@ -72,6 +72,7 @@ function serveOverrides(req, res) {
         if (typeof overrides['servers.useLan'] === 'boolean') tweaks.servers.useLan = overrides['servers.useLan'];
         if (typeof overrides['readAhead.enabled'] === 'boolean') readAhead.config.enabled = overrides['readAhead.enabled'];
         if (typeof overrides['peerBoost.enabled'] === 'boolean') tweaks.peerBoost = Object.assign({}, tweaks.peerBoost, { enabled: overrides['peerBoost.enabled'] });
+        if (typeof overrides['readAhead.mergeSources'] === 'boolean') readAhead.config.mergeSources = overrides['readAhead.mergeSources'];
         if (!lanAllowed()) {
             routes = {};
             selectUpstream();
@@ -216,6 +217,7 @@ function mirrorLimit(server) {
 
 function mirrorsFor(windowPath) {
     // Verified mirrors of a playing file for the read-ahead window; using them keeps them from the idle cleanup
+    if (readAhead.config.mergeSources === false) return [];
     var list = mirrors[filePathOf(windowPath)] || [];
     list.forEach(function(m) { touchTorrent(m.hash, m.server, null); });
     return list.map(function(m) { return { key: m.path + '@' + m.server.host, hostname: m.server.hostname, port: m.server.port, path: m.path }; });

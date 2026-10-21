@@ -20,6 +20,7 @@
             ['ranking.enabled', 'Ordenar fontes e marcar a recomendada'],
             ['prewarm.enabled', 'Pré-carregar a fonte recomendada'],
             ['peerBoost.enabled', 'Trackers extras nos torrents'],
+            ['readAhead.mergeSources', 'Somar torrents do mesmo arquivo para baixar mais rápido'],
             ['sources.enabled', 'Seletor de fontes (botão verde)']
         ] },
         { title: 'Correção automática', column: 1, items: [
