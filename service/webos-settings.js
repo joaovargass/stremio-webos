@@ -46,7 +46,8 @@
         { title: 'TV e rede', column: 0, items: [
             ['readAhead.enabled', 'Buffer extra na memória da TV'],
             ['servers.useLan', 'Usar o servidor do Mac quando a TV não der conta'],
-            ['doctor.startOnLanWhenHeavy', 'Começar pelo Mac se a fonte for pesada para a TV']
+            ['doctor.startOnLanWhenHeavy', 'Começar pelo Mac se a fonte for pesada para a TV'],
+            ['devMode.keepAlive', 'Renovar o modo desenvolvedor sozinho']
         ] },
         { title: 'Avisos', column: 0, items: [
             ['sources.loadingHint', 'Dica "Demorando?" ao carregar'],

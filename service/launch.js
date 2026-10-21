@@ -135,6 +135,8 @@ function serveOverrides(req, res) {
         tweaks.subtitles = tweaks.subtitles || {};
         if (typeof overrides['subtitles.convert'] === 'boolean') tweaks.subtitles.convert = overrides['subtitles.convert'];
         if (typeof overrides['subtitles.allowHttp'] === 'boolean') tweaks.subtitles.allowHttp = overrides['subtitles.allowHttp'];
+        tweaks.devMode = tweaks.devMode || {};
+        if (typeof overrides['devMode.keepAlive'] === 'boolean') tweaks.devMode.keepAlive = overrides['devMode.keepAlive'];
         if (!lanAllowed()) {
             routes = {};
             selectUpstream();
@@ -978,6 +980,24 @@ function pruneCache(keep) {
     });
 }
 
+function renewDevMode() {
+    // Reset the Developer Mode session from the TV itself, so the TV never removes the app when no computer renews it
+    var settings = tweaks.devMode || {};
+    if (settings.keepAlive === false) return;
+    var token = '';
+    try { token = fs.readFileSync(settings.tokenPath, 'utf8').trim(); } catch (err) { return console.warn('dev mode token not readable', err.code); }
+    if (!/^[0-9A-Za-z]+$/.test(token)) return console.warn('dev mode token has an unexpected format');
+    var req = https.get(settings.resetUrl + '?sessionToken=' + encodeURIComponent(token), { timeout: settings.timeoutMs }, function(res) {
+        var body = '';
+        res.setEncoding('utf8');
+        res.on('data', function(part) { body += part; });
+        // The answer is logged by its outcome only, so the session token never reaches a log
+        res.on('end', function() { console.log('dev mode session', /"result"\s*:\s*"success"/.test(body) ? 'renewed' : 'not renewed (HTTP ' + res.statusCode + ')'); });
+    });
+    req.on('timeout', function() { req.destroy(); });
+    req.on('error', function(err) { console.warn('dev mode renewal failed', err.code || err.message); });
+}
+
 function seedServerSettings() {
     // A TV has none of the GPUs the bundled server tests at start, and an update replaces its saved settings; saying so up front skips the failing tests
     var file = path.join(process.env.APP_PATH, 'server-settings.json');
@@ -1001,4 +1021,10 @@ probe('http://127.0.0.1:11470/', function(running) {
         setInterval(selectUpstream, tweaks.servers.recheckIntervalMs);
     }
     setInterval(removeIdleTorrents, 60000);
+    // The session counts 1000 hours down; one renewal shortly after start and then on a long interval keeps it full
+    var devMode = tweaks.devMode || {};
+    if (devMode.everyHours) {
+        setTimeout(renewDevMode, devMode.startDelayMs);
+        setInterval(renewDevMode, devMode.everyHours * 3600000);
+    }
 });

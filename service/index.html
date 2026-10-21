@@ -39,7 +39,8 @@
                 'peerBoost.enabled': (tweaks.peerBoost || {}).enabled !== false,
                 'readAhead.mergeSources': (tweaks.readAhead || {}).mergeSources !== false,
                 'subtitles.convert': (tweaks.subtitles || {}).convert !== false,
-                'subtitles.allowHttp': (tweaks.subtitles || {}).allowHttp === true
+                'subtitles.allowHttp': (tweaks.subtitles || {}).allowHttp === true,
+                'devMode.keepAlive': (tweaks.devMode || {}).keepAlive !== false
             }));
         })(window.STREMIO_TWEAKS);
     </script>

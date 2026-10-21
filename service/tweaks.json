@@ -289,5 +289,13 @@
         "allowHttp": false,
         "convertTimeoutMs": 20000,
         "convertMaxBytes": 4194304
+    },
+    "devMode": {
+        "keepAlive": true,
+        "tokenPath": "/var/luna/preferences/devmode_enabled",
+        "resetUrl": "https://developer.lge.com/secure/ResetDevModeSession.dev",
+        "startDelayMs": 60000,
+        "everyHours": 20,
+        "timeoutMs": 30000
     }
 }
