@@ -231,6 +231,21 @@
     "hints": {
         "firstRunToast": true
     },
+    "liveTest": {
+        "enabled": true,
+        "candidates": 3,
+        "everyMs": 2000,
+        "windowMs": 30000,
+        "judgeAfterMs": 6000,
+        "deadAfterMs": 12000,
+        "scores": {
+            "fast": 30,
+            "ok": 15,
+            "slow": -20,
+            "tooSlow": -60,
+            "dead": -150
+        }
+    },
     "debug": {
         "overlay": true,
         "lines": 12,

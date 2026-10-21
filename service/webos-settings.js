@@ -19,6 +19,7 @@
         { title: 'Fontes', column: 0, items: [
             ['ranking.enabled', 'Ordenar fontes e marcar a recomendada'],
             ['prewarm.enabled', 'Pré-carregar a fonte recomendada'],
+            ['liveTest.enabled', 'Testar as melhores fontes antes de recomendar'],
             ['peerBoost.enabled', 'Trackers extras nos torrents'],
             ['readAhead.mergeSources', 'Somar torrents do mesmo arquivo para baixar mais rápido'],
             ['sources.enabled', 'Seletor de fontes (botão verde)']

@@ -6,6 +6,7 @@
     var config = window.STREMIO_TWEAKS || {};
     var prewarmed = {};
     var lastRanking = null;
+    var live = { forId: null, candidates: [], stats: {}, classes: {}, busy: {}, version: 0, timer: null, started: 0 };
     var NOTICE = /reinstall|re-install|configure (this|the) addon|install the addon|not configured|expired|invalid (api )?key|update (this|the) addon/i;
     var rules = compileRules(config.ranking);
 
@@ -56,6 +57,82 @@
         fetch('/__tweaks/warm?' + query).then(function (resp) {
             console.info('[tweaks] prewarm started', stream.infoHash, 'at', Math.round((fraction || 0) * 100) + '%', resp.status);
         }).catch(function (err) { console.warn('[tweaks] prewarm failed', err); });
+    }
+
+    function liveKey(stream) {
+        // A torrent file as the streaming server names it
+        return stream && stream.infoHash ? stream.infoHash.toLowerCase() + '/' + (stream.fileIdx || 0) : null;
+    }
+
+    function liveClass(entry) {
+        // Turn a measurement into a class, so the ranking changes only when a source really moves up or down
+        var settings = config.liveTest || {};
+        var elapsed = Date.now() - live.started;
+        if (!entry.peers) return elapsed > (settings.deadAfterMs || 12000) ? 'dead' : 'waiting';
+        if (elapsed < (settings.judgeAfterMs || 6000)) return 'waiting';
+        return entry.ratio >= 1.5 ? 'fast' : entry.ratio >= 1 ? 'ok' : entry.ratio >= 0.5 ? 'slow' : 'tooSlow';
+    }
+
+    function testSources(rankedFor, ranked, force) {
+        // Start the best few torrents of the open title in the background and measure them, so the recommended source is one that downloads now
+        var settings = config.liveTest || {};
+        if (settings.enabled === false || !rankedFor || (!force && live.forId === rankedFor)) return;
+        stopTesting();
+        live.forId = rankedFor;
+        live.started = Date.now();
+        // Only a reset of earlier measurements changes the ranking; a first test starts from the same order
+        if (Object.keys(live.classes).length) live.version++;
+        live.stats = {};
+        live.classes = {};
+        live.candidates = ranked.filter(function (s) { return s.infoHash; }).slice(0, settings.candidates || 3);
+        console.info('[tweaks] testing sources', live.candidates.map(function (s) { return summary(s, true) || s.infoHash; }).join(' | '));
+        live.candidates.forEach(function (s) { prewarm(s, 0, startsOnLan(s)); });
+        live.timer = setInterval(measure, settings.everyMs || 2000);
+    }
+
+    function stopTesting() {
+        // End the measuring loop; the last numbers stay for the ranking and the picker
+        if (live.timer) clearInterval(live.timer);
+        live.timer = null;
+    }
+
+    function measure() {
+        // Read peers and speed of each candidate against its bitrate, one request per source at a time
+        var settings = config.liveTest || {};
+        var doctor = window.__stremioDoctor;
+        if (Date.now() - live.started > (settings.windowMs || 30000)) {
+            console.info('[tweaks] source test done', JSON.stringify(live.classes));
+            return stopTesting();
+        }
+        if (!doctor) return;
+        live.candidates.forEach(function (s) {
+            var key = liveKey(s);
+            if (live.busy[key]) return;
+            live.busy[key] = true;
+            doctor.fetchJson('/' + key + '/stats.json').then(function (st) {
+                live.busy[key] = false;
+                if (!st) return;
+                var needed = window.__stremioStreamBitrate[s.infoHash] || 1048576;
+                var entry = { speed: st.downloadSpeed || 0, peers: st.peers || 0, ratio: (st.downloadSpeed || 0) / needed };
+                live.stats[key] = entry;
+                var cls = liveClass(entry);
+                if (cls === live.classes[key]) return;
+                live.classes[key] = cls;
+                live.version++;
+                console.info('[tweaks] source', summary(s, true) || key, cls, Math.round(entry.speed / 1024) + ' KB/s,', entry.peers, 'peers');
+            });
+        });
+    }
+
+    function liveLabel(stream) {
+        // Short pt-BR line with what the background test measured for a source
+        var key = liveKey(stream);
+        var entry = live.stats[key];
+        var cls = live.classes[key];
+        if (!entry || !cls) return '';
+        if (cls === 'dead') return 'sem conexão no teste';
+        var speed = (entry.speed / 1048576).toFixed(1).replace('.', ',') + ' MB/s';
+        return cls === 'waiting' ? 'testando · ' + speed : 'testada · ' + speed + ' · ' + entry.peers + ' peers';
     }
 
     function streamText(stream) {
@@ -149,6 +226,11 @@
             score -= rank.dolbyVisionOnly.penalty;
             warnings.push(rank.dolbyVisionOnly.label);
         }
+        // What the background test measured moves a source up or down within its quality
+        var tested = live.classes[liveKey(stream)];
+        var testScores = (config.liveTest || {}).scores || {};
+        if (tested && testScores[tested]) score += testScores[tested];
+        if (tested === 'dead' || tested === 'tooSlow') warnings.push(tested === 'dead' ? 'sem conexão no teste' : 'lenta no teste');
         // Bitrate from file size and runtime, kept for the doctor to start heavy sources on the LAN server
         var size = sizeBytes(text);
         var bitrate = size && ctx.runtimeS ? size / ctx.runtimeS : null;
@@ -189,7 +271,7 @@
         };
         // The title page polls the core many times a second; the same sources in the same context reuse the last ranking
         var selected = state.selected || {};
-        var signature = JSON.stringify(context) + '|' + (selected.streamPath ? selected.streamPath.id : '') + '|' + state.streams.map(function (group) {
+        var signature = JSON.stringify(context) + '|' + live.version + '|' + (selected.streamPath ? selected.streamPath.id : '') + '|' + state.streams.map(function (group) {
             var content = group.content || {};
             var list = content.type === 'Ready' && Array.isArray(content.content) ? content.content.map(function (s) { return s.infoHash || s.url || ''; }).join(',') : '';
             return (group.addon && group.addon.transportUrl || '') + ':' + content.type + ':' + list;
@@ -237,7 +319,10 @@
         window.__stremioRankedStreams = ranking.rankedStreams;
         // Warm the recommended torrent only on the title page, where the click to play happens, on the Mac when the TV cannot sustain it
         var recommended = ranking.rankedStreams[0];
-        if ((location.hash || '').indexOf('#/detail') === 0) prewarm(recommended, 0, startsOnLan(recommended));
+        if ((location.hash || '').indexOf('#/detail') === 0) {
+            prewarm(recommended, 0, startsOnLan(recommended));
+            testSources(ranking.rankedFor, ranking.rankedStreams, false);
+        }
         var ranked = Object.assign({}, state, { streams: ranking.groups });
         return (config.simple || {}).enabled ? simplify(ranked) : ranked;
     }
@@ -270,8 +355,8 @@
         var entry = Object.assign({}, best, {
             name: simple.playLabel || 'Assistir',
             // The stream card has room for one short line; the full summary goes to the details panel
-            title: summary(best, true),
-            description: summary(best) + (simple.moreHint ? '\n' + simple.moreHint : '')
+            title: [summary(best, true), liveLabel(best)].filter(Boolean).join(' · '),
+            description: summary(best) + (liveLabel(best) ? '\n' + liveLabel(best) : '') + (simple.moreHint ? '\n' + simple.moreHint : '')
         });
         return Object.assign({}, state, { streams: [Object.assign({}, home, { content: Object.assign({}, home.content, { content: [entry] }) })] });
     }
@@ -297,5 +382,13 @@
         syncServer(core);
     });
 
-    window.__stremioTweaks = { scoreStream: scoreStream, rankMetaDetails: rankMetaDetails, summary: summary, prewarm: prewarm };
+    window.__stremioTweaks = {
+        scoreStream: scoreStream,
+        rankMetaDetails: rankMetaDetails,
+        summary: summary,
+        prewarm: prewarm,
+        liveLabel: liveLabel,
+        // Measure the current title's sources again, for the refresh row of the picker
+        retest: function () { testSources(window.__stremioRankedFor, window.__stremioRankedStreams || [], true); }
+    };
 })();
