@@ -1,0 +1,15 @@
+--- player.chunk.js
++++ player.chunk.js
+@@ -1286,7 +1286,11 @@
+                         } = T.state(), l = (e, t) => e.find((({
+                             lang: e
+                         }) => b.eo.matches(e, t)));
+-                        if (!be())
++                        // Let the tweaks pick embedded / pt-BR / native subtitles when no manual choice is saved for this stream
++                        if (!be() && !(null != o && o.subtitleTrack) && window.__stremioPickSubtitles && (function(p) {
++                            return p && (p.embedded ? C.selectSubtitlesTrack(p.embedded) : C.selectExtraSubtitlesTrack(p.extra), me(!0), !0)
++                        })(window.__stremioPickSubtitles($e(), _e(), Ge(), e)));
++                        else if (!be())
+                             if (fe()) {
+                                 if (e) {
+                                     const t = l($e(), e),

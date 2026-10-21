@@ -1,0 +1,29 @@
+--- video.chunk.js
++++ video.chunk.js
+@@ -17033,9 +17033,12 @@
+             }
+         },
+         4775: e => {
+-            e.exports = function(e, t) {
++            e.exports = function _tracks(e, t, attempt) {
++                var _cfg = ((window.STREMIO_TWEAKS || {}).subtitles || {});
++                var _attempt = attempt || 1;
+                 var _ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+-                var _timer = setTimeout(function() { _ctrl && _ctrl.abort(); }, 10000);
++                var _timer = setTimeout(function() { _ctrl && _ctrl.abort(); }, _cfg.tracksTimeoutMs || 10000);
++                var _url = e;
+                 fetch((window.__STREMIO_SERVER_URL__||"http://127.0.0.1:11470")+"/tracks/" + encodeURIComponent(e), _ctrl ? {signal: _ctrl.signal} : {}).then((function(e) {
+                     return e.json()
+                 })).then((function(e) {
+@@ -17052,7 +17055,10 @@
+                     })
+                 })).catch((function(e) {
+                     clearTimeout(_timer);
+-                    console.error("[tracks] fetch failed:", e), t(!1)
++                    console.error("[tracks] fetch failed:", e);
++                    // Torrents can take longer than one timeout to expose their tracks, so retry before giving up
++                    if (_attempt < (_cfg.tracksRetries || 1)) return setTimeout(function() { _tracks(_url, t, _attempt + 1); }, _cfg.tracksRetryDelayMs || 8000);
++                    t(!1)
+                 }))
+             }
+         },

@@ -1,0 +1,11 @@
+--- video.chunk.js
++++ video.chunk.js
+@@ -16262,6 +16262,8 @@
+                     var d = t.containerElement;
+                     if (!(d instanceof HTMLElement)) throw new Error("Container element required to be instance of HTMLElement");
+                     var h = document.createElement("div");
++                    // Give the external subtitles container a stable class so the style tweaks can target it
++                    h.className = "twk-subs";
+                     h.style.position = "absolute", h.style.right = "0", h.style.bottom = "0", h.style.left = "0", h.style.zIndex = "1", h.style.textAlign = "center", d.style.position = "relative", d.style.zIndex = "0", d.appendChild(h);
+                     var f = {
+                             time: null
