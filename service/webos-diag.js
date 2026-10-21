@@ -4,12 +4,14 @@
 // once and only text and bar scales change per tick; it polls only while open.
 (function () {
     var config = (window.STREMIO_TWEAKS || {}).diagnostics || { refreshMs: 1000 };
+    var doctorConfig = (window.STREMIO_TWEAKS || {}).doctor || {};
     var TORRENT_URL = /^(https?:\/\/[^/]+)\/([0-9a-f]{40})\/(\d+)/i;
     var HLS_URL = /^(https?:\/\/[^/]+)\/hlsv2\//i;
     var LAYOUT = [
-        { title: 'Servidor', rows: [['server', 'Em uso'], ['version', 'Versão'], ['limit', 'Limite / cache'], ['candidates', 'Candidatos']] },
+        { title: 'Saúde', rows: [['health', 'Estado'], ['reason', 'Motivo'], ['total', 'Buffer total'], ['totalBar'], ['player', 'No player'], ['ram', 'Na memória da TV']] },
+        { title: 'Servidor', rows: [['server', 'Em uso'], ['version', 'Versão'], ['limit', 'Limite / cache'], ['transcoder', 'Conversão HLS'], ['candidates', 'Candidatos']] },
         { title: 'Torrent', rows: [['peers', 'Peers'], ['sources', 'Fontes'], ['speed', 'Velocidade'], ['speedBar'], ['needed', 'Necessário'], ['transfer', 'Baixado / enviado'], ['progress', 'Arquivo'], ['progressBar']] },
-        { title: 'Reprodução', rows: [['video', 'Vídeo'], ['position', 'Posição'], ['buffer', 'Buffer à frente'], ['bufferBar'], ['frames', 'Frames perdidos'], ['recovery', 'Recuperações'], ['error', 'Erro']] }
+        { title: 'Reprodução', rows: [['video', 'Vídeo'], ['position', 'Posição'], ['buffer', 'Buffer à frente'], ['bufferBar'], ['frames', 'Frames perdidos'], ['recovery', 'Recuperações'], ['subtitle', 'Legenda automática'], ['error', 'Erro']] }
     ];
     var BUFFER_TARGET_S = 30;
     var panel = null;
@@ -30,7 +32,7 @@
 
     function createPanel() {
         // Build header, sections, value cells and bars once
-        panel = element('div', 'twk-diag');
+        panel = element('div', 'twk-diag twk-diag-grid');
         var header = element('div', 'twk-diag-header');
         header.appendChild(element('div', 'twk-diag-title', 'Diagnóstico'));
         chip = header.appendChild(element('div', 'twk-chip', '...'));
@@ -115,17 +117,19 @@
         // Fill the server section, resolving the proxy upstream
         if (!origin) {
             setText('server', src.split('?')[0].replace(/^https?:\/\//, '').slice(0, 60));
-            ['version', 'limit', 'candidates'].forEach(function (key) { setText(key, '-'); });
+            ['version', 'limit', 'transcoder', 'candidates'].forEach(function (key) { setText(key, '-'); });
             return;
         }
         var real = proxy && proxy.upstream ? proxy.upstream.replace(/\/$/, '') : origin;
         loadServerInfo(real, origin);
         var info = serverInfo[real] || {};
         var local = /127\.0\.0\.1|localhost/.test(real);
-        setText('server', real.replace(/^https?:\/\//, '') + (local ? ' (TV)' : ' (rede local)'), local ? 'warn' : 'good');
+        setText('server', real.replace(/^https?:\/\//, '') + (local ? ' (TV)' : ' (rede local)'), local ? 'good' : 'warn');
         setText('version', info.version || '?');
         var cache = info.cache === 0 ? 'sem cache' : info.cache ? megabytes(info.cache) : '?';
         setText('limit', (info.limit ? mbps(info.limit) : '?') + ' / ' + cache);
+        var transcoder = proxy && proxy.transcoder;
+        setText('transcoder', transcoder ? transcoder.replace(/^https?:\/\//, '').replace(/\/$/, '') : 'indisponível (sem Mac)', transcoder ? 'good' : 'warn');
         var candidates = proxy && proxy.candidates ? Object.keys(proxy.candidates).map(function (key) {
             return key.replace(/^https?:\/\//, '').replace(/\/$/, '') + (proxy.candidates[key] ? ' ✓' : ' ✕');
         }).join('  ') : '-';
@@ -163,7 +167,30 @@
         setBar('bufferBar', ahead / BUFFER_TARGET_S, tone);
         setText('frames', quality && quality.totalVideoFrames ? quality.droppedVideoFrames + ' de ' + quality.totalVideoFrames : 'n/d (hardware)');
         setText('recovery', (retry.retries || 0) + (retry.hlsUrl ? ' · modo HLS' : ''), retry.retries ? 'warn' : null);
+        var pick = window.__stremioSubPick;
+        var synced = window.__stremioSubSync;
+        setText('subtitle', (pick ? (pick.rule.indexOf('embedded') === 0 ? 'embutida · ' : 'externa · ') + pick.lang + (pick.label ? ' · ' + pick.label : '') : 'nenhuma') +
+            (synced ? ' · sincronizada ' + (synced.offsetMs / 1000).toFixed(1) + ' s' : ''));
         setText('error', video.error ? video.error.code + ' · ' + video.error.message : 'nenhum', video.error ? 'bad' : 'good');
+    }
+
+    function renderHealth(video, proxy) {
+        // Show the doctor verdict and the buffer split between the player and the TV memory
+        var doctor = (window.__stremioDoctor || {}).state || {};
+        var ra = proxy && proxy.readAhead;
+        var status = doctor.status || 'ok';
+        var tone = status === 'ok' ? 'good' : status === 'atenção' || status === 'carregando' ? 'warn' : 'bad';
+        var target = doctorConfig.targetBufferS || 120;
+        var player = doctor.playerBufferS !== undefined ? doctor.playerBufferS : bufferAhead(video);
+        var total = doctor.totalBufferS !== undefined ? Math.max(doctor.totalBufferS, player) : player;
+        setText('health', status, tone);
+        setText('reason', doctor.reason || '-');
+        setText('total', total.toFixed(0) + ' s de ' + target + ' s', total >= 30 ? 'good' : total >= 10 ? 'warn' : 'bad');
+        setBar('totalBar', total / target, total >= 30 ? 'good' : total >= 10 ? 'warn' : 'bad');
+        setText('player', player.toFixed(0) + ' s');
+        if (!ra || !ra.enabled) return setText('ram', 'desligado');
+        var ramText = ra.active ? (doctor.ramBufferS || 0).toFixed(0) + ' s · ' + megabytes(ra.aheadBytes) : 'ocioso';
+        setText('ram', ramText + ' (limite ' + ra.budgetMb + ' MB)');
     }
 
     function render() {
@@ -183,10 +210,11 @@
         busy = true;
         Promise.all([
             torrent ? fetchJson(torrent[1] + '/' + torrent[2] + '/' + torrent[3] + '/stats.json') : null,
-            origin && origin.indexOf(location.host) !== -1 ? fetchJson('/__tweaks/status') : null
+            fetchJson('/__tweaks/status')
         ]).then(function (results) {
             busy = false;
-            renderServer(origin, results[1], src);
+            renderHealth(video, results[1]);
+            renderServer(origin, origin && origin.indexOf(location.host) !== -1 ? results[1] : null, src);
             if (torrent) renderTorrent(results[0], video);
             renderPlayback(video);
         });
@@ -207,12 +235,17 @@
         if (panel) panel.classList.remove('twk-visible');
     }
 
-    // Leaving the player route closes the panel
-    window.addEventListener('hashchange', function () {
+    function onRouteChange() {
+        // Leaving the player route closes the panel
         if ((location.hash || '').indexOf('#/player') !== 0) close();
-    });
+    }
+
+    // The app router navigates with pushState and announces it as historyChange
+    window.addEventListener('hashchange', onRouteChange);
+    window.addEventListener('historyChange', onRouteChange);
 
     window.__stremioDiag = {
-        toggle: function () { return timer ? close() : open(); }
+        toggle: function () { return timer ? close() : open(); },
+        close: close
     };
 })();
