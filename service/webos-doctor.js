@@ -245,10 +245,8 @@
     function reloadInPlace(video) {
         // Ask the player for the same URL again; the proxy now serves it from another server
         var resumeAt = video.__lastTime || video.currentTime || 0;
-        video.addEventListener('loadedmetadata', function onMeta() {
-            video.removeEventListener('loadedmetadata', onMeta);
-            if (resumeAt > 1) video.currentTime = resumeAt;
-        });
+        // The player seeks to this position itself when the same URL reports its metadata again
+        video.__twkResumeMs = Math.max(0, Math.round((resumeAt || 0) * 1000));
         video.src = video.getAttribute('src');
         try { video.load(); } catch (_e) {}
         try { video.play(); } catch (_e) {}

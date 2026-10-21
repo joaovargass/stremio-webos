@@ -74,10 +74,8 @@
         setTimeout(function () {
             // Skip the reload when the player was unloaded or moved on meanwhile
             if (!video.isConnected || video.getAttribute('src') !== expectedSrc) return;
-            video.addEventListener('loadedmetadata', function onMeta() {
-                video.removeEventListener('loadedmetadata', onMeta);
-                if (resumeAt > 1) video.currentTime = resumeAt;
-            });
+            // The player seeks to this position itself when the new source reports its metadata
+            video.__twkResumeMs = Math.max(0, Math.round((resumeAt || 0) * 1000));
             video.src = url;
             try { video.load(); } catch (_e) {}
             try { video.play(); } catch (_e) {}

@@ -1,0 +1,14 @@
+--- video.chunk.js
++++ video.chunk.js
+@@ -21197,7 +21197,10 @@
+                 }, 100);
+             });
+             A.onloadedmetadata = function() {
+-                    G("buffering"), G("buffered"), V("time", C)
++                    // A reload by the tweaks resumes where it was, not at the position the player opened with
++                    var resume = A.__twkResumeMs;
++                    A.__twkResumeMs = null;
++                    G("buffering"), G("buffered"), V("time", null != resume ? resume : C)
+                 }, A.onvolumechange = function() {
+                     G("volume"), G("muted")
+                 }, A.onratechange = function() {
