@@ -6,6 +6,18 @@ The official Stremio app has a bug where it always plays the first audio track i
 
 Built from [Stremio Theater v1.9.2](https://github.com/NoobyGains/stremio-vidaa-tv) with the official Stremio streaming server.
 
+## Playback tweaks for webOS 25
+
+This fork installs next to the official app (`com.joaovargass.stremiodbg`) and fixes the "Video is not supported / MEDIA_ELEMENT_ERROR: Format error" failures seen on webOS 25:
+
+- **Starved torrents are recovered, not reported as unsupported.** The LG pipeline reports ~40 s without data as a format error; the player now reloads at the same position and shows the swarm state.
+- **Everything plays inside Stremio.** No hand-off to the LG media player. Files the TV plays silently (DTS, TrueHD) or rejects are switched to an HLS remux with AAC audio, keeping 5.1.
+- **Faster torrents.** Extra trackers on every torrent, and an optional Mac streaming server (`./mac/install.sh`) with the "Fast" profile and a disk cache. The app picks the first reachable server and falls back to the TV automatically.
+- **Best stream first.** Streams are ranked by swarm health, resolution and compatibility, with warnings for DTS/TrueHD, remux, Dolby Vision without HDR and 3D.
+- **Diagnostics button** in the player control bar: server, peers, speed against the needed bitrate, buffer and recoveries.
+
+All settings live in `service/tweaks.json`.
+
 ## Prerequisites
 
 1. Install the [webOS ares CLI](https://www.npmjs.com/package/@webosose/ares-cli) — `npm i -g @webosose/ares-cli` (requires Node.js 20 for SSH compatibility)
