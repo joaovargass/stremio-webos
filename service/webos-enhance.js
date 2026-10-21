@@ -76,7 +76,10 @@
     function testSources(rankedFor, ranked, force) {
         // Start the best few torrents of the open title in the background and measure them, so the recommended source is one that downloads now
         var settings = config.liveTest || {};
-        if (settings.enabled === false || !rankedFor || (!force && live.forId === rankedFor)) return;
+        var wanted = ranked.filter(function (s) { return s.infoHash; }).slice(0, settings.candidates || 3);
+        if (settings.enabled === false || !rankedFor || !wanted.length) return;
+        // Addons answer one by one: sources that arrive later join the test of the same title
+        if (!force && live.forId === rankedFor) return addCandidates(wanted);
         stopTesting();
         live.forId = rankedFor;
         live.started = Date.now();
@@ -84,9 +87,21 @@
         if (Object.keys(live.classes).length) live.version++;
         live.stats = {};
         live.classes = {};
-        live.candidates = ranked.filter(function (s) { return s.infoHash; }).slice(0, settings.candidates || 3);
-        console.info('[tweaks] testing sources', live.candidates.map(function (s) { return summary(s, true) || s.infoHash; }).join(' | '));
-        live.candidates.forEach(function (s) { prewarm(s, 0, startsOnLan(s)); });
+        live.candidates = [];
+        addCandidates(wanted);
+    }
+
+    function addCandidates(wanted) {
+        // Warm and measure the wanted sources not tested yet, restarting the measuring window when it had ended
+        var settings = config.liveTest || {};
+        var known = live.candidates.map(liveKey);
+        var fresh = wanted.filter(function (s) { return known.indexOf(liveKey(s)) === -1; }).slice(0, Math.max(0, (settings.candidates || 3) - live.candidates.length));
+        if (!fresh.length) return;
+        live.candidates = live.candidates.concat(fresh);
+        console.info('[tweaks] testing sources', fresh.map(function (s) { return summary(s, true) || s.infoHash; }).join(' | '));
+        fresh.forEach(function (s) { prewarm(s, 0, startsOnLan(s)); });
+        if (live.timer) return;
+        live.started = Date.now();
         live.timer = setInterval(measure, settings.everyMs || 2000);
     }
 
