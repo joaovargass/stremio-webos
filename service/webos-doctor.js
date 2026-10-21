@@ -20,6 +20,9 @@
     var rerouted = {};
     var lanLost = {};
     var prepared = {};
+    var prerouted = {};
+    var lastProxy = null;
+    var lastHash = null;
     var struggleSince = null;
     var progress = [];
     var race = { videoId: null, list: [], best: null };
@@ -160,6 +163,29 @@
         return true;
     }
 
+    function heavyForTv(hash) {
+        // A source whose bitrate the TV server measurably cannot sustain
+        var bitrate = hash ? (window.__stremioStreamBitrate || {})[hash] : null;
+        return !!bitrate && learned.n >= 60 && bitrate > learned.rate * 1.1;
+    }
+
+    function prepareOn(next, fraction) {
+        // Warm a candidate on the server that would play it: the Mac when the current video already uses it or the TV cannot keep up
+        var hash = next.infoHash ? next.infoHash.toLowerCase() : null;
+        var proxy = lastProxy;
+        var currentOnLan = !!(proxy && lastHash && (proxy.routes || {})[lastHash]);
+        var lan = config.prewarmOnLan !== false && hash && proxy && proxy.fallback && !(proxy.routes || {})[hash] && (currentOnLan || heavyForTv(hash));
+        var routed = lan ? fetch('/__tweaks/route?hash=' + hash + '&to=remote').then(function () {
+            // The race then measures and later plays this source on the Mac, where it was warmed
+            prerouted[hash] = true;
+            rerouted[hash] = true;
+        }).catch(function () {}) : Promise.resolve();
+        routed.then(function () {
+            console.info('[doctor] preparing a source in the background', next.infoHash || next.url, Math.round(fraction * 100) + '%', lan ? 'on the Mac' : '');
+            window.__stremioTweaks.prewarm(next, fraction);
+        });
+    }
+
     function prepareNext(video) {
         // Start the next ranked sources in the background at the playback position (the start while loading), once per video
         var videoId = currentVideoId();
@@ -169,10 +195,7 @@
         Promise.all([rankedStreams(), currentStream()]).then(function (results) {
             var list = candidates(results[0] || [], results[1], config.raceCandidates || 2);
             race = { videoId: videoId, list: list, best: null };
-            list.forEach(function (next) {
-                console.info('[doctor] preparing a source in the background', next.infoHash || next.url, Math.round(fraction * 100) + '%');
-                window.__stremioTweaks.prewarm(next, fraction);
-            });
+            list.forEach(function (next) { prepareOn(next, fraction); });
         });
     }
 
@@ -187,7 +210,9 @@
         // A short quality summary reads better than the release file name
         var short = window.__stremioTweaks && window.__stremioTweaks.summary ? window.__stremioTweaks.summary(stream) : '';
         var title = short || String(stream.description || stream.title || '').split('\n').filter(function (l) { return l && l.indexOf('⭐') !== 0 && l.indexOf('⚠') !== 0; })[0] || 'próxima fonte';
-        toast(prefix + title.slice(0, 70), 5000);
+        // Say when the new source comes from the Mac, as every other Mac use is announced
+        var viaMac = stream.infoHash && prerouted[stream.infoHash.toLowerCase()] ? ' · pelo Mac' : '';
+        toast(prefix + title.slice(0, 70) + viaMac, 5000);
         stalledSince = null;
         loadingSince = null;
         // The new source gets its own race once it is loading
@@ -273,6 +298,8 @@
         var ramBytes = ra && ra.active ? ra.aheadBytes : 0;
         // Remember whether any server can convert to HLS, so recovery skips a conversion that cannot work
         if (proxy) state.transcoder = proxy.transcoder;
+        if (proxy) lastProxy = proxy;
+        lastHash = hash;
         if (proxy) state.lanFallback = proxy.fallback;
         // A video moved to the Mac goes back to the TV when the Mac stops answering; tell the viewer once
         var routedTo = hash && proxy && (proxy.routes || {})[hash];
@@ -317,8 +344,7 @@
         if (wantHint !== hintShown && window.__stremioSources && window.__stremioSources.hint) window.__stremioSources.hint(wantHint);
         hintShown = wantHint;
         if (now < calmUntil) return;
-        var bitrate = hash ? (window.__stremioStreamBitrate || {})[hash] : null;
-        var heavy = bitrate && learned.n >= 60 && bitrate > learned.rate * 1.1;
+        var heavy = heavyForTv(hash);
         if (config.startOnLanWhenHeavy !== false && loadingSince && onTv && heavy && proxy.fallback && !rerouted[hash]) {
             // Start sources the TV clearly cannot sustain on the LAN server, before any picture is shown
             calmUntil = now + calmFor();
