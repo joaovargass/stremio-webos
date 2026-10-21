@@ -72,10 +72,10 @@ Findings behind them (LG 55UR8750PSA, webOS 25 10.3.2): the native pipeline play
 - `webos-diag.js` renders health (doctor verdict, player + RAM buffer), server, swarm, speed against the needed bitrate, playback, recovery and the automatic subtitle choice; it polls only while open (`diagnostics.refreshMs`).
 - `webos-doctor.js` samples the player, the torrent and the proxy every `doctor.checkEveryMs` and acts only on symptoms the viewer sees: a video that does not start in `startTimeoutMs` or a frozen picture (not seeking) for `stalledForMs`. Remedies: the LAN server for that video (once; the proxy moves the running read-ahead download to it at the next byte, `seamless` in the route answer, so the player does not reload), then the next source (`maxStartSwitches` before the first picture, `maxAutoSwitches` after), each followed by `graceMs` without new actions. While playback struggles or a start takes longer than `prewarmAfterMs`, the next `raceCandidates` sources are started in the background at the playback position (`prewarmNext`), and a switch picks the one really downloading; a freeze longer than 10 s shows the green-key hint. Slowness alone only changes the status, and data the server already holds ahead counts as buffer. It learns the TV download rate (`learnTvSpeed`, `localStorage["twk.tvRate"]`) and starts sources the TV clearly cannot sustain on the LAN server (`startOnLanWhenHeavy`). All navigation goes through the app router (`window.__stremioHistory`) so Back keeps working; a source switch replaces the player entry.
 - `simple` (`webos-enhance.js`): ranking honours `simple.quality` (cap and bonus) and, when `simple.enabled`, the title page gets a single `simple.playLabel` entry with a one-line summary; the full ranked list stays in `window.__stremioRankedStreams` for the picker and the doctor. Subtitles keep the best track per language (`simple.subtitleChoices`) and `subtitles.cycleKey` (red, 403) cycles tracks.
-- `webos-subs.js` drops addon error entries and duplicates, adds OpenSubtitles v3 results by hash, size and filename, orders by language then sync likelihood (hash match, release group, source tags, CD split penalty) and picks a track before the player's own auto-select (`subtitles.priority`, embedded tracks only during `embeddedWaitMs`). `subtitles.netflixStyle` restyles external subtitles.
+- `webos-subs.js` drops addon error entries and duplicates, adds OpenSubtitles v3 results by hash, size and filename, orders by language then sync likelihood (hash match, release group, source tags, CD split penalty) and picks a track before the player's own auto-select: the profile subtitle languages first (embedded, then external; nothing when the profile turns automatic subtitles off), then `subtitles.priority`, with embedded tracks only during `embeddedWaitMs`; forced and SDH tracks go last. `subtitles.netflixStyle` restyles external subtitles.
 - `webos-subsync.js` asks `/__tweaks/subsync` once per `syncEverySlotS` while an external subtitle shows, and applies the delay when `confidence >= syncMinConfidence` and the shift is at least `syncMinOffsetMs`. Hash-matched subtitles and a delay set by hand are left alone.
 - `webos-sources.js` lists the ranked streams of the playing title (loading them through the core when the player was opened from the library) and plays the chosen one; `webos-settings.js` stores on/off overrides in `localStorage["twk.overrides"]`, applied by `index.html` before any tweak script runs.
-- Remote keys: green (`sources.hotkey`, 404) source picker, yellow (`settings.hotkey`, 405) settings, red (`subtitles.cycleKey`, 403) subtitle cycle.
+- Remote keys: green (`sources.hotkey`, 404) source picker, yellow (`settings.hotkey`, 405) settings, red (`subtitles.cycleKey`, 403) subtitle cycle, blue (`restart.hotkey`, 406) restart from the beginning (`webos-sources.js`: player seek to 0; title page `Ctx/RewindLibraryItem` then the best source; `restart.resumeHint` tells where a video resumed).
 
 Test helpers live outside the repo; reproduce on the TV with `ares-inspect` and the Chrome DevTools Protocol (the LG video layer shows as white or black in screenshots).
 
@@ -110,6 +110,10 @@ Exposes the router history as `window.__stremioHistory`. The router keeps its ow
 ### webos-expose-subtitles-delay.patch
 
 Exposes the player video controller as `window.__stremioPlayerVideo` and its external subtitle delay setter as `window.__stremioSetSubtitlesDelay`, used by the automatic subtitle sync.
+
+### webos-restart-option.patch
+
+Adds "Recomeçar do início" to the card menu (home, discover, library, search) under "Continue watching": it clears the saved progress (`rewindLibraryItem`) and opens the player from the start.
 
 ### webos-subtitle-class.patch
 
