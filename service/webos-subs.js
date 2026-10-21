@@ -16,6 +16,7 @@
     var pending = {};
     var firstPickAt = {};
     var syncScores = {};
+    var profile = { audio: null, subs: [], autoSelect: true };
 
     function baseLang(lang) {
         // Reduce any language tag to "pt-br", "pt" or a two-letter code
@@ -36,15 +37,35 @@
         return /\bsdh\b|\bcc\b|hearing/i.test((track.label || '') + ' ' + (track.lang || ''));
     }
 
+    function isForced(track) {
+        // Forced tracks only translate the few lines spoken in another language
+        return /forced|forçad/i.test((track.label || '') + ' ' + (track.lang || ''));
+    }
+
     function nativeLang(audioTracks) {
-        // The first audio track language is the best guess for the original language
-        var first = (audioTracks || []).filter(function (t) { return t && t.lang; })[0];
-        return first ? baseLang(first.lang) : null;
+        // The language that will be heard: the Stremio audio language when the file has it, else the first track
+        var langs = (audioTracks || []).filter(function (t) { return t && t.lang; }).map(function (t) { return baseLang(t.lang); });
+        if (profile.audio && langs.indexOf(profile.audio) !== -1) return profile.audio;
+        return langs[0] || null;
+    }
+
+    function loadProfile(core) {
+        // Language choices of the Stremio profile come first in every subtitle decision
+        core.getState('ctx').then(function (ctx) {
+            var settings = (ctx && ctx.profile && ctx.profile.settings) || {};
+            profile = {
+                audio: settings.audioLanguage ? baseLang(settings.audioLanguage) : null,
+                subs: [settings.subtitlesLanguage, settings.secondarySubtitlesLanguage].filter(Boolean).map(baseLang),
+                autoSelect: settings.subtitlesAutoSelect !== false
+            };
+        }).catch(function () {});
     }
 
     function rank(lang, native) {
-        // Lower is better: pt-BR, pt, original language, then everything else
+        // Lower is better: the Stremio subtitle languages, then pt-BR, pt, original language, then everything else
         var base = baseLang(lang);
+        var chosen = profile.subs.indexOf(base);
+        if (chosen !== -1) return chosen - profile.subs.length;
         if (base === 'pt-br') return 0;
         if (base === 'pt') return 1;
         if (native && base === native) return 2;
@@ -163,7 +184,9 @@
         var base = baseLang(track.lang);
         if (wanted === 'any') return true;
         if (wanted === 'native') return !!native && base === native;
-        return base === wanted;
+        // Plain Portuguese also accepts the Brazilian variant; Brazilian Portuguese stays exact
+        var target = baseLang(wanted);
+        return base === target || (target === 'pt' && base === 'pt-br');
     }
 
     function choose(tracks, wanted, native) {
@@ -171,17 +194,18 @@
         var hits = tracks.filter(function (t) { return matches(t, wanted, native); });
         hits.forEach(function (t, i) { t.__pickOrder = i; });
         hits.sort(function (a, b) {
-            return (config.avoidSdh ? isSdh(a) - isSdh(b) : 0) || scoreOf(b) - scoreOf(a) || a.__pickOrder - b.__pickOrder;
+            return isForced(a) - isForced(b) || (config.avoidSdh ? isSdh(a) - isSdh(b) : 0) || scoreOf(b) - scoreOf(a) || a.__pickOrder - b.__pickOrder;
         });
         return hits[0] || null;
     }
 
     window.__stremioPickSubtitles = function (embedded, extra, audioTracks) {
         // Walk the configured priority list and return the first available track
-        if (!config.enabled || !config.autoPick) return null;
+        if (!config.enabled || !config.autoPick || !profile.autoSelect) return null;
         var native = nativeLang(audioTracks);
         window.__stremioNativeLang = native;
-        var priority = config.priority || [];
+        // The subtitle languages set in Stremio first (embedded, then external), then the configured order
+        var priority = profile.subs.reduce(function (list, lang) { return list.concat(['embedded:' + lang, 'external:' + lang]); }, []).concat(config.priority || []);
         // Embedded tracks arrive late; external ones may only win once the wait window is over
         var stream = location.hash;
         firstPickAt[stream] = firstPickAt[stream] || Date.now();
@@ -208,6 +232,8 @@
     }
 
     whenCoreReady(function (core) {
+        loadProfile(core);
+        window.addEventListener('historyChange', function () { loadProfile(core); });
         // Post-process player state on its way to the UI, chaining any earlier wrapper
         var original = core.getState;
         core.getState = function (model) {
@@ -234,7 +260,7 @@
         // Embedded tracks first (non-SDH, preferred languages first), then the external list, then off
         var native = window.__stremioNativeLang || null;
         var embedded = (state.subtitlesTracks || []).slice().sort(function (a, b) {
-            return isSdh(a) - isSdh(b) || rank(a.lang, native) - rank(b.lang, native);
+            return isForced(a) - isForced(b) || isSdh(a) - isSdh(b) || rank(a.lang, native) - rank(b.lang, native);
         }).map(function (t) { return { id: t.id, kind: 'embedded', label: (LABELS[baseLang(t.lang)] || t.lang) + ' · embutida' + (isSdh(t) ? ' (SDH)' : '') }; });
         // The player lists addon and OpenSubtitles copies side by side; simple mode keeps one external track per language
         var langs = {};
