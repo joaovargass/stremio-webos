@@ -9,7 +9,8 @@
         "transcoders": [
             "http://192.168.0.5:11480/"
         ],
-        "probeTimeoutMs": 2500,
+        "probePath": "stats.json",
+        "probeTimeoutMs": 5000,
         "recheckIntervalMs": 30000,
         "downAfterFailures": 3,
         "useLan": true,

@@ -133,13 +133,13 @@ function loadTweaks() {
         return JSON.parse(fs.readFileSync(path.join(__dirname, 'tweaks.json'), 'utf8'));
     } catch (err) {
         console.error('tweaks.json unreadable, using local server only', err.message);
-        return { servers: { candidates: ['http://127.0.0.1:11470/'], probeTimeoutMs: 2500, recheckIntervalMs: 0 } };
+        return { servers: { candidates: ['http://127.0.0.1:11470/'], probePath: 'stats.json', probeTimeoutMs: 5000, recheckIntervalMs: 0 } };
     }
 }
 
 function probe(candidate, callback, timeoutMs) {
-    // A streaming server is usable when its /settings endpoint answers 200
-    var opts = url.parse(candidate + 'settings');
+    // A streaming server is usable when its probe path answers 200; /stats.json stays fast while /settings waits on network lookups
+    var opts = url.parse(candidate + tweaks.servers.probePath);
     opts.timeout = timeoutMs || tweaks.servers.probeTimeoutMs;
     var done = false;
     var finish = function(ok) { if (!done) { done = true; callback(ok); } };
