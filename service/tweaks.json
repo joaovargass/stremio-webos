@@ -175,6 +175,7 @@
         "learnTvSpeed": true,
         "learnLanSpeed": true,
         "startOnLanWhenHeavy": true,
+        "lanVerifyMs": 15000,
         "graceMs": 60000,
         "prewarmNext": true,
         "prewarmOnLan": true,

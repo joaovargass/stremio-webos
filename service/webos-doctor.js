@@ -23,6 +23,7 @@
     var prerouted = {};
     var announced = {};
     var converted = {};
+    var lanCheck = null;
     var lastProxy = null;
     var lastHash = null;
     var struggleSince = null;
@@ -274,13 +275,36 @@
         announced[hash] = true;
         console.warn('[doctor] rerouting', hash, 'to', proxy.fallback, reason);
         toast('Usando o Mac para esta fonte (' + reason + ')', 6000);
-        fetch('/__tweaks/route?hash=' + hash + '&to=remote').then(function (r) { return r.json(); }).then(function (route) {
+        fetchJson('/__tweaks/route?hash=' + hash + '&to=remote').then(function (route) {
             stalledSince = null;
             loadingSince = null;
+            // The Mac must prove it delivers this torrent; one that has not even found it yet would starve the player
+            lanCheck = { hash: hash, at: Date.now(), time: video.currentTime };
             // The proxy moved the running download to the Mac at the next byte; reload only when it could not
-            if (!route.seamless) reloadInPlace(video);
-        }).catch(function () { reloadInPlace(video); });
+            if (!route || !route.seamless) reloadInPlace(video);
+        });
         return true;
+    }
+
+    function lanDelivers(video, hash, stats) {
+        // After the verify period, a routed video must have moved or its torrent must download on the Mac
+        if (lanCheck && lanCheck.hash !== hash) lanCheck = null;
+        if (!lanCheck) return true;
+        if (Date.now() - lanCheck.at < (config.lanVerifyMs || 15000)) return true;
+        var check = lanCheck;
+        lanCheck = null;
+        return video.currentTime > check.time + 1 || !!(stats && stats.name && stats.downloadSpeed > 0);
+    }
+
+    function leaveLan(video, hash) {
+        // Bring a video the Mac could not deliver back to the TV; a video already watched goes on to the next source
+        console.warn('[doctor] the Mac delivered nothing, back to the TV', hash);
+        toast('O Mac não conseguiu baixar esta fonte, voltando para a TV', 6000);
+        var watched = !!state.started[currentVideoId()];
+        fetchJson('/__tweaks/route?hash=' + hash + '&to=default').then(function (route) {
+            if (!route || !route.seamless) reloadInPlace(video);
+            if (watched) remedy(video, hash, null, 'o Mac não entregou dados');
+        });
     }
 
     function calmFor() {
@@ -325,6 +349,7 @@
             announced[hash] = true;
             toast('Esta fonte vem do Mac (pesada para a TV)', 5000);
         }
+        if (!lanDelivers(video, hash, stats)) return leaveLan(video, hash);
         state.playerBufferS = playerBuffer(video);
         state.ramBufferS = needed ? ramBytes / needed : 0;
         state.totalBufferS = state.playerBufferS + state.ramBufferS;
