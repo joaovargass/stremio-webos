@@ -1,0 +1,33 @@
+--- main.js
++++ main.js
+@@ -1910,6 +1910,9 @@
+                 }, T = () => {
+                     const t = h();
+                     t && c.rewindLibraryItem(t), e.onClose()
++                }, R = () => {
++                    const t = h(), l = b(), i = l && (l.player || l.metaDetailsStreams || l.metaDetailsVideos);
++                    Promise.resolve(t && c.rewindLibraryItem(t)).then((() => s.navigate(i)))
+                 }, M = () => {
+                     s.navigate(y())
+                 };
+@@ -1979,6 +1982,20 @@
+                                                                     get class() {
+                                                                         return Ze.option
+                                                                     },
++                                                                    icon: "skip-back",
++                                                                    label: "Recomeçar do início",
++                                                                    onPress: R
++                                                                })
++                                                            }
++                                                        }), (0, o.a0)(o.wv, {
++                                                            get when() {
++                                                                return w()
++                                                            },
++                                                            get children() {
++                                                                return (0, o.a0)(U, {
++                                                                    get class() {
++                                                                        return Ze.option
++                                                                    },
+                                                                     icon: "details",
+                                                                     get label() {
+                                                                         return t("LIBRARY_DETAILS")
