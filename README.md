@@ -10,13 +10,17 @@ Built from [Stremio Theater v1.9.2](https://github.com/NoobyGains/stremio-vidaa-
 
 This fork installs next to the official app (`com.joaovargass.stremiodbg`) and fixes the "Video is not supported / MEDIA_ELEMENT_ERROR: Format error" failures seen on webOS 25:
 
-- **Starved torrents are recovered, not reported as unsupported.** The LG pipeline reports ~40 s without data as a format error; the player now reloads at the same position and shows the swarm state.
-- **Everything plays inside Stremio.** No hand-off to the LG media player. Files the TV plays silently (DTS, TrueHD) or rejects are switched to an HLS remux with AAC audio, keeping 5.1.
-- **Faster torrents.** Extra trackers on every torrent, and an optional Mac streaming server (`./mac/install.sh`) with the "Fast" profile and a disk cache. The app picks the first reachable server and falls back to the TV automatically.
-- **Best stream first.** Streams are ranked by swarm health, resolution and compatibility, with warnings for DTS/TrueHD, remux, Dolby Vision without HDR and 3D.
-- **Diagnostics button** in the player control bar: server, peers, speed against the needed bitrate, buffer and recoveries.
+Everything runs on the TV by default. A Mac on the same network is optional and only used for what the TV cannot do, always with an on-screen notice.
 
-All settings live in `service/tweaks.json`.
+- **TV first.** The TV's own streaming server serves every video. When the TV swarm cannot keep up, only that video is fetched through the Mac (`./mac/install.sh`), which the app finds by itself even after the router changes IP addresses.
+- **Faster start.** The recommended source is started and its first megabyte fetched while the stream list is open, and a RAM read-ahead window on the TV keeps data beyond the player's own ~30 s buffer.
+- **Automatic recovery.** A starved torrent is reloaded at the same position instead of failing with "Format error"; a source that stays too slow switches to the next ranked one; files the TV plays silently (DTS, TrueHD) are converted to AAC on the Mac or skipped when no Mac is available. Playback never leaves Stremio.
+- **Best stream first.** Streams are ranked by swarm health, resolution and compatibility, with warnings for DTS/TrueHD, remux, Dolby Vision without HDR and 3D.
+- **Subtitles.** Embedded tracks first, then Brazilian Portuguese, then the original language, avoiding SDH. External subtitles are ordered by how likely they match the release (OpenSubtitles hash, release group, source tags), shown in a Netflix-like style, and re-timed automatically with the Mac sync service (ffsubsync on a window of audio around the playback position, framerate drift included, applied through the player delay only when confident).
+- **Player controls.** Source picker on the player bar and on the green remote key, also while a video is loading; diagnostics panel on the player bar (health, buffer, server, swarm, subtitle choice).
+- **Settings on the TV.** The yellow remote key opens an on/off switch for every tweak; choices are saved on the TV.
+
+Defaults live in `service/tweaks.json`.
 
 ## Prerequisites
 

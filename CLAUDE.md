@@ -21,13 +21,19 @@ app/                  # webOS app shell — starts service, redirects to http://
   icon.png
 
 service/              # webOS service
-  launch.js           # Entry point: serves www/ on :8080, proxies to the best reachable streaming server
-  index.html          # Theater entry point (sets __STREMIO_SERVER_URL__ to :8080, loads tweaks.json)
-  tweaks.json         # All playback tweak settings, shared by launch.js and the frontend
-  webos-enhance.js    # Points the profile at the proxy, adds trackers, ranks streams
+  launch.js           # Entry point: serves www/ on :8080, proxies to the TV server, LAN fallback per video, HLS and sync routing
+  readahead.js        # RAM read-ahead window for torrent files, budget adapted to free memory
+  index.html          # Theater entry point (sets __STREMIO_SERVER_URL__ to :8080, loads tweaks.json + saved on/off choices)
+  tweaks.json         # Defaults for every tweak, shared by launch.js and the frontend
+  webos-enhance.js    # Points the profile at the proxy, adds trackers, ranks streams, prewarms the recommended one
   webos-retry.js      # Stall recovery and in-player HLS fallback (no external player)
+  webos-subs.js       # Subtitle list cleanup, OpenSubtitles lookup, sync-likelihood ranking, automatic choice, Netflix style
+  webos-subsync.js    # Automatic subtitle delay from the Mac sync service
+  webos-doctor.js     # Playback health, per-video LAN fallback, automatic next source, router-safe navigation
+  webos-sources.js    # Source picker (player button and green key)
+  webos-settings.js   # On/off switches for every tweak (yellow key)
   webos-diag.js       # Diagnostics panel opened from the player control bar
-  webos-ui.css        # Styles for the toast and the diagnostics panel
+  webos-ui.css        # Styles for the toast, panels, hint and subtitles
   package.json        # Service manifest (main: launch.js)
   services.json       # Luna service registration
   server.js           # [downloaded] Official Stremio streaming server
@@ -36,8 +42,9 @@ service/              # webOS service
 patches/              # Patches applied to Vidaa frontend files during build (alphabetical order)
 
 mac/                  # Optional dedicated streaming server for a Mac on the same LAN
-  install.sh          # Installs the patched server + launchd agents (idempotent)
+  install.sh          # Installs the patched server, the sync service and launchd agents (idempotent)
   patch-server.py     # Makes server.js listen on STREMIO_PORT
+  subsync.js          # Subtitle sync service (ffmpeg audio window + ffsubsync), port 11481
   devmode-keepalive.sh # Resets the 1000 h Dev Mode session daily
 ```
 
@@ -46,7 +53,13 @@ mac/                  # Optional dedicated streaming server for a Mac on the sam
 1. `make build` downloads the Vidaa frontend (pinned to a specific commit) and Stremio server, copies frontend files into `service/www/`, applies patches
 2. `make deploy` packages the IPK via `ares-package` and installs via `ares-install`
 3. On launch: `app/index.html` starts the server service via Luna, polls `:8080` with an `<img>` load, redirects when ready
-4. `service/launch.js` serves the Theater frontend on `:8080` and proxies all non-static requests to the first reachable server in `tweaks.json` `servers.candidates` (probed in parallel every `recheckIntervalMs`, never switched while a video is being served). It starts the bundled `server.js` only when nothing already answers on `:11470` (the official app's service usually does), which saves RAM. `GET /__tweaks/status` reports the selected upstream.
+4. `service/launch.js` serves the Theater frontend on `:8080` and proxies all non-static requests to the first reachable server in `tweaks.json` `servers.candidates`, the TV's own `127.0.0.1:11470` first (probed in parallel every `recheckIntervalMs`, never switched while a video is being served). It starts the bundled `server.js` only when nothing already answers on `:11470` (the official app's service usually does), which saves RAM. When no configured LAN server answers it scans the /24 subnet for `servers.discover.port` and adopts what it finds. Routes:
+   - `GET /__tweaks/status`: upstream, candidates, transcoder, sync server, LAN fallback, per-video routes, read-ahead state.
+   - `GET /__tweaks/route?hash=<infohash>&to=remote|default`: serve one torrent from the LAN fallback server (used by the doctor when the TV swarm is too slow).
+   - `POST /__tweaks/overrides`: on/off choices that live in the service (`servers.useLan`, `readAhead.enabled`).
+   - `GET /__tweaks/subsync?media=&sub=&at=`: forwarded to the sync service on the transcoder host.
+   - `/hlsv2/*`: sent to a server listed in `servers.transcoders` (ffmpeg), answered 503 at once when none is reachable.
+   Media URLs inside requests (`http://127.0.0.1:8080/...`) are rewritten to an address the target server can read (its loopback, the TV LAN address or the source host).
 
 The proxy exists because the app loads from `file://` which cannot XHR/fetch to `http://` origins (CORS restriction on webOS Chrome 68). Serving everything from `:8080` makes all requests same-origin. It also lets the app use a LAN server: the desktop streaming server only sends CORS headers to `*.strem.io`/`*.stremio.com` and `127.0.0.1:11470`, so the browser cannot call it directly, but the Node proxy can.
 
@@ -56,7 +69,14 @@ Findings behind them (LG 55UR8750PSA, webOS 25 10.3.2): the native pipeline play
 
 - `webos-enhance.js` sets `streamingServerUrl` to `servers.coreUrl` (local profile setting only, never synced), re-creates every torrent with `trackers` (`POST /<hash>/create`) and wraps `core.getState('meta_details')` to rank streams by swarm health, resolution and compatibility (`ranking`), adding a recommended badge and warnings.
 - `webos-retry.js` is called from the WebOsVideo error handler: a starved torrent is reloaded at the last position (`stallRetry`), a rejected format or a stream without a playable audio track switches to `/hlsv2/.../master.m3u8` on the streaming server (`hlsFallback`). The server always re-encodes audio to AAC and keeps the channel count.
-- `webos-diag.js` renders server, swarm, speed against the needed bitrate, buffer and recovery state; it polls only while open (`diagnostics.refreshMs`).
+- `webos-diag.js` renders health (doctor verdict, player + RAM buffer), server, swarm, speed against the needed bitrate, playback, recovery and the automatic subtitle choice; it polls only while open (`diagnostics.refreshMs`).
+- `webos-doctor.js` samples the player, the torrent and the proxy every `doctor.checkEveryMs`. A video that does not start in `startTimeoutMs`, stalls without data or stays below the needed rate for `slowForMs` is first moved to the LAN server (only that video, once), then to the next ranked source (`maxAutoSwitches`). All navigation goes through the app router (`window.__stremioHistory`) so Back keeps working.
+- `webos-subs.js` drops addon error entries and duplicates, adds OpenSubtitles v3 results by hash, size and filename, orders by language then sync likelihood (hash match, release group, source tags, CD split penalty) and picks a track before the player's own auto-select (`subtitles.priority`, embedded tracks only during `embeddedWaitMs`). `subtitles.netflixStyle` restyles external subtitles.
+- `webos-subsync.js` asks `/__tweaks/subsync` once per `syncEverySlotS` while an external subtitle shows, and applies the delay when `confidence >= syncMinConfidence` and the shift is at least `syncMinOffsetMs`. Hash-matched subtitles and a delay set by hand are left alone.
+- `webos-sources.js` lists the ranked streams of the playing title (loading them through the core when the player was opened from the library) and plays the chosen one; `webos-settings.js` stores on/off overrides in `localStorage["twk.overrides"]`, applied by `index.html` before any tweak script runs.
+- Remote keys: green (`sources.hotkey`, 404) source picker, yellow (`settings.hotkey`, 405) settings.
+
+Test helpers live outside the repo; reproduce on the TV with `ares-inspect` and the Chrome DevTools Protocol (the LG video layer shows as white or black in screenshots).
 
 ## Patches
 
@@ -78,9 +98,29 @@ One-line hook in the WebOsVideo `onerror` handler that lets `window.__stremioSta
 
 Removes the automatic hand-off to the LG media player (`com.webos.app.photovideo`) on decode/format errors, so playback always stays inside Stremio.
 
-### webos-diagnostics-button.patch
+### webos-player-buttons.patch
 
-Adds a `network` icon button to the player control bar that toggles the diagnostics panel.
+Adds two buttons to the player control bar: `skip-forward` opens the source picker, `network` toggles the diagnostics panel.
+
+### webos-expose-history.patch
+
+Exposes the router history as `window.__stremioHistory`. The router keeps its own entry stack and treats a single entry as "quit the app" on Back, so tweak scripts must navigate with it instead of `location.hash`.
+
+### webos-expose-subtitles-delay.patch
+
+Exposes the player video controller as `window.__stremioPlayerVideo` and its external subtitle delay setter as `window.__stremioSetSubtitlesDelay`, used by the automatic subtitle sync.
+
+### webos-subtitle-class.patch
+
+Gives the external subtitles container the `twk-subs` class so the Netflix-like style can target it.
+
+### webos-subtitles-pick.patch
+
+Lets `window.__stremioPickSubtitles` choose the subtitle track before the player's own auto-select, unless a manual choice is saved for the stream.
+
+### webos-tracks-retry.patch
+
+Longer timeout and retries for the streaming server `/tracks/` call, which lists embedded subtitles and can take 20+ s on a cold torrent.
 
 ## Deploy
 
@@ -95,4 +135,4 @@ make clean     # remove all build artifacts
 make ffmpeg    # optional: bundle static ffmpeg (needs ~100 MB free on the TV app partition)
 ```
 
-Optional Mac streaming server (faster torrents, 10 GB disk cache, HLS/audio conversion): `./mac/install.sh`, then put `http://<mac-ip>:11480/` first in `servers.candidates`.
+Optional Mac services (faster torrents for videos the TV cannot keep up with, 10 GB disk cache, HLS/audio conversion, subtitle sync): `./mac/install.sh`. The TV finds the Mac on port 11480 by itself; `servers.candidates` and `servers.transcoders` only seed the first try. A DHCP reservation for the Mac avoids the subnet scan.
