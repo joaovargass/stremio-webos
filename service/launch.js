@@ -357,15 +357,38 @@ function serveMirror(reqUrl, res) {
     res.end(JSON.stringify({ file: primaryPath, checking: !!started, mirrors: (mirrors[primaryPath] || []).map(function(m) { return m.path; }) }));
 }
 
-function isPrivateHost(hostname) {
-    // Addresses that never leave the home network, where plain http is the only option the servers offer
-    return /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|\[::1\])/.test(hostname || '');
+function ipBits(address) {
+    // An IPv4 or IPv6 address as a string of 32 or 128 bits, or null when it is a name
+    var plain = String(address || '').split('%')[0];
+    if (/^\d+\.\d+\.\d+\.\d+$/.test(plain)) return plain.split('.').map(function(n) { return (+n).toString(2).padStart(8, '0'); }).join('');
+    if (plain.indexOf(':') === -1) return null;
+    var halves = plain.split('::');
+    var head = halves[0] ? halves[0].split(':') : [];
+    var tail = halves.length > 1 && halves[1] ? halves[1].split(':') : [];
+    // The "::" stands for as many zero groups as the written ones leave out of eight
+    var groups = head.concat(new Array(Math.max(0, 8 - head.length - tail.length)).fill('0'), tail);
+    return groups.map(function(g) { return parseInt(g, 16).toString(2).padStart(16, '0'); }).join('');
+}
+
+function isHomeNetwork(hostname) {
+    // Hosts that never leave the home network: loopback, private and link-local ranges, and any address inside a subnet of the TV's own interfaces
+    if (/^(localhost$|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|::1$|f[cd][0-9a-f]{2}:|fe80:)/i.test(hostname || '')) return true;
+    var bits = ipBits(hostname);
+    if (!bits) return false;
+    var nets = os.networkInterfaces();
+    return Object.keys(nets).some(function(name) {
+        return (nets[name] || []).some(function(n) {
+            var own = ipBits(n.address);
+            var prefix = parseInt(String(n.cidr || '').split('/')[1], 10);
+            return !!own && own.length === bits.length && prefix > 0 && own.slice(0, prefix) === bits.slice(0, prefix);
+        });
+    });
 }
 
 function subtitleTargets(from) {
     // Public subtitles are read over https only; plain http stays for the home network or when the viewer allows it
     var parsed = url.parse(from);
-    if (parsed.protocol !== 'http:' || isPrivateHost(parsed.hostname)) return [from];
+    if (parsed.protocol !== 'http:' || isHomeNetwork(parsed.hostname)) return [from];
     var secure = 'https:' + from.slice(5);
     return (tweaks.subtitles || {}).allowHttp ? [secure, from] : [secure];
 }
