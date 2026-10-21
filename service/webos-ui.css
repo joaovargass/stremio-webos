@@ -1,11 +1,38 @@
 /* Styles for the webOS tweak overlays, matching the Stremio Theater theme.
-   Only opacity and transform are animated so the TV GPU composites them cheaply. */
+   Only opacity and transform are animated so the TV GPU composites them cheaply.
+   Every component takes its colours, type, radii and motion from these tokens. */
+
+:root {
+    --twk-font: 'PlusJakartaSans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --twk-text: #ffffff;
+    --twk-text-soft: rgba(255, 255, 255, 0.88);
+    --twk-muted: rgba(255, 255, 255, 0.6);
+    --twk-faint: rgba(255, 255, 255, 0.45);
+    --twk-accent: #7b5bf5;
+    --twk-accent-text: #b9a6ff;
+    --twk-accent-soft: rgba(123, 91, 245, 0.18);
+    --twk-accent-hover: rgba(123, 91, 245, 0.12);
+    --twk-accent-focus: rgba(123, 91, 245, 0.22);
+    --twk-surface: rgba(12, 12, 16, 0.95);
+    --twk-surface-raised: rgba(20, 20, 24, 0.94);
+    --twk-line: #2a2a2d;
+    --twk-good: #4fd18b;
+    --twk-warn: #f5c518;
+    --twk-bad: #ff6b6b;
+    --twk-radius-s: 1vh;
+    --twk-radius-m: 1.4vh;
+    --twk-radius-l: 2vh;
+    --twk-shadow: 0 2.5vh 6vh rgba(0, 0, 0, 0.6);
+    --twk-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --twk-z-panel: 2147483647;
+    --twk-z-debug: 2147483646;
+}
 
 .twk-toast,
 .twk-diag {
-    font-family: 'PlusJakartaSans', -apple-system, BlinkMacSystemFont, sans-serif;
-    color: #ffffff;
-    z-index: 2147483647;
+    font-family: var(--twk-font);
+    color: var(--twk-text);
+    z-index: var(--twk-z-panel);
     pointer-events: none;
     will-change: transform, opacity;
 }
@@ -21,15 +48,15 @@
     gap: 1.2vw;
     max-width: 50vw;
     padding: 1.6vh 2vw 1.6vh 1.6vw;
-    background: rgba(20, 20, 24, 0.94);
-    border-left: 0.35vw solid #7b5bf5;
+    background: var(--twk-surface-raised);
+    border-left: 0.35vw solid var(--twk-accent);
     border-radius: 1.4vh;
     box-shadow: 0 1.5vh 4vh rgba(0, 0, 0, 0.55);
     font-size: 2.1vh;
     font-weight: 600;
     opacity: 0;
     transform: translateY(-2vh);
-    transition: opacity 220ms ease, transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    transition: opacity 220ms ease, transform 260ms var(--twk-ease);
 }
 
 .twk-toast.twk-visible {
@@ -42,7 +69,7 @@
     width: 1.4vh;
     height: 1.4vh;
     border-radius: 50%;
-    background: #7b5bf5;
+    background: var(--twk-accent);
     animation: twk-pulse 1.2s ease-in-out infinite;
 }
 
@@ -61,14 +88,14 @@
     max-height: 90vh;
     overflow: hidden;
     padding: 2.2vh 1.8vw 1.6vh;
-    background: rgba(12, 12, 16, 0.95);
-    border: 1px solid #2a2a2d;
+    background: var(--twk-surface);
+    border: 1px solid var(--twk-line);
     border-radius: 2vh;
-    box-shadow: 0 2.5vh 6vh rgba(0, 0, 0, 0.6);
+    box-shadow: var(--twk-shadow);
     font-size: 1.75vh;
     opacity: 0;
     transform: translateX(3vw);
-    transition: opacity 220ms ease, transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    transition: opacity 220ms ease, transform 280ms var(--twk-ease);
 }
 
 .twk-diag.twk-visible {
@@ -92,8 +119,8 @@
 .twk-chip {
     padding: 0.5vh 1vw;
     border-radius: 2vh;
-    background: rgba(123, 91, 245, 0.18);
-    color: #b9a6ff;
+    background: var(--twk-accent-soft);
+    color: var(--twk-accent-text);
     font-size: 1.6vh;
     font-weight: 700;
     text-transform: uppercase;
@@ -103,12 +130,12 @@
 .twk-section {
     min-width: 0;
     padding: 1vh 0;
-    border-top: 1px solid #2a2a2d;
+    border-top: 1px solid var(--twk-line);
 }
 
 .twk-section-title {
     margin-bottom: 0.9vh;
-    color: rgba(255, 255, 255, 0.45);
+    color: var(--twk-faint);
     font-size: 1.5vh;
     font-weight: 700;
     text-transform: uppercase;
@@ -124,7 +151,7 @@
 
 .twk-label {
     flex: none;
-    color: rgba(255, 255, 255, 0.6);
+    color: var(--twk-muted);
 }
 
 .twk-value {
@@ -146,7 +173,7 @@
     margin: 0.5vh 0 0.9vh;
     overflow: hidden;
     border-radius: 0.4vh;
-    background: #2a2a2d;
+    background: var(--twk-line);
 }
 
 .twk-bar-fill {
@@ -156,10 +183,10 @@
     width: 100%;
     height: 100%;
     border-radius: 0.4vh;
-    background: #7b5bf5;
+    background: var(--twk-accent);
     transform-origin: left center;
     transform: scaleX(0);
-    transition: transform 600ms cubic-bezier(0.2, 0.8, 0.2, 1), background-color 300ms ease;
+    transition: transform 600ms var(--twk-ease), background-color 300ms ease;
 }
 
 /* Diagnostics in two columns so every section fits the screen without scrolling */
@@ -203,8 +230,8 @@
 }
 
 .twk-close:hover {
-    background: #7b5bf5;
-    color: #ffffff;
+    background: var(--twk-accent);
+    color: var(--twk-text);
 }
 
 .twk-src-row,
@@ -214,7 +241,7 @@
 
 .twk-src-row:hover,
 .twk-set-row:hover {
-    background: rgba(123, 91, 245, 0.12);
+    background: var(--twk-accent-hover);
 }
 
 .twk-diag-header > .twk-chip {
@@ -239,8 +266,8 @@
 }
 
 .twk-src-focus {
-    background: rgba(123, 91, 245, 0.22);
-    border-color: #7b5bf5;
+    background: var(--twk-accent-focus);
+    border-color: var(--twk-accent);
 }
 
 .twk-src-title {
@@ -301,7 +328,7 @@
     font-weight: 600 !important;
     line-height: 1.28 !important;
     letter-spacing: 0.01em;
-    color: #ffffff !important;
+    color: var(--twk-text) !important;
     background-color: transparent !important;
     text-shadow: 0 0 0.06em #000000, 0 0 0.12em rgba(0, 0, 0, 0.9), 0 0.08em 0.24em rgba(0, 0, 0, 0.85) !important;
 }
@@ -314,13 +341,13 @@
     bottom: 16vh;
     width: 70vw;
     padding: 0.8vh 0.8vw;
-    border-radius: 1vh;
+    border-radius: var(--twk-radius-s);
     background: rgba(0, 0, 0, 0.62);
-    color: rgba(255, 255, 255, 0.88);
+    color: var(--twk-text-soft);
     font-family: Menlo, Consolas, monospace;
     font-size: 1.35vh;
     line-height: 1.35;
-    z-index: 2147483646;
+    z-index: var(--twk-z-debug);
     pointer-events: none;
 }
 
@@ -339,16 +366,16 @@
     padding: 1.2vh 2vw;
     border-radius: 3vh;
     background: rgba(20, 20, 24, 0.9);
-    border: 1px solid #7b5bf5;
-    color: #ffffff;
-    font-family: 'PlusJakartaSans', -apple-system, BlinkMacSystemFont, sans-serif;
+    border: 1px solid var(--twk-accent);
+    color: var(--twk-text);
+    font-family: var(--twk-font);
     font-size: 2vh;
     font-weight: 600;
-    z-index: 2147483647;
+    z-index: var(--twk-z-panel);
     pointer-events: none;
     opacity: 0;
     transform: translate(-50%, 2vh);
-    transition: opacity 220ms ease, transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    transition: opacity 220ms ease, transform 260ms var(--twk-ease);
 }
 
 .twk-hint.twk-visible {
@@ -356,10 +383,10 @@
     transform: translate(-50%, 0);
 }
 
-.twk-good { color: #4fd18b; }
-.twk-warn { color: #f5c518; }
-.twk-bad { color: #ff6b6b; }
+.twk-good { color: var(--twk-good); }
+.twk-warn { color: var(--twk-warn); }
+.twk-bad { color: var(--twk-bad); }
 
-.twk-bar-fill.twk-good { background: #4fd18b; }
-.twk-bar-fill.twk-warn { background: #f5c518; }
-.twk-bar-fill.twk-bad { background: #ff6b6b; }
+.twk-bar-fill.twk-good { background: var(--twk-good); }
+.twk-bar-fill.twk-warn { background: var(--twk-warn); }
+.twk-bar-fill.twk-bad { background: var(--twk-bad); }
