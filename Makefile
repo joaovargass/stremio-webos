@@ -6,7 +6,7 @@ VIDAA_REPO = https://github.com/NoobyGains/stremio-vidaa-tv/archive/$(VIDAA_REF)
 FFMPEG_VERSION = 7.0.2
 FFMPEG_URL = https://johnvansickle.com/ffmpeg/releases/ffmpeg-$(FFMPEG_VERSION)-arm64-static.tar.xz
 FFMPEG_SHA256 = f4149bb2b0784e30e99bdda85471c9b5930d3402014e934a5098b41d0f7201b1
-TWEAKS = tweaks.json webos-ui.css webos-enhance.js webos-retry.js webos-diag.js
+TWEAKS = tweaks.json webos-ui.css webos-enhance.js webos-retry.js webos-subs.js webos-subsync.js webos-doctor.js webos-sources.js webos-settings.js webos-diag.js
 VERSION = $(shell python3 -c "import json; print(json.load(open('app/appinfo.json'))['version'])")
 IPK = $(APP_ID)_$(VERSION)_all.ipk
 

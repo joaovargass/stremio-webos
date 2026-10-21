@@ -2,12 +2,24 @@
     "servers": {
         "coreUrl": "http://127.0.0.1:8080/",
         "candidates": [
-            "http://192.168.0.3:11480/",
-            "http://192.168.0.3:11470/",
-            "http://127.0.0.1:11470/"
+            "http://127.0.0.1:11470/",
+            "http://192.168.0.5:11480/",
+            "http://192.168.0.5:11470/"
+        ],
+        "transcoders": [
+            "http://192.168.0.5:11480/"
         ],
         "probeTimeoutMs": 2500,
-        "recheckIntervalMs": 30000
+        "recheckIntervalMs": 30000,
+        "useLan": true,
+        "discover": {
+            "enabled": true,
+            "port": 11480,
+            "timeoutMs": 700,
+            "concurrency": 32,
+            "everyMs": 300000
+        },
+        "subsyncPort": 11481
     },
     "trackers": [
         "udp://tracker.opentrackr.org:1337/announce",
@@ -26,9 +38,17 @@
         "min": 40,
         "max": 200
     },
+    "peerBoost": {
+        "enabled": true
+    },
+    "prewarm": {
+        "enabled": true,
+        "warmBytes": 1048576
+    },
     "stallRetry": {
         "maxRetries": 10,
-        "retryDelayMs": 3000
+        "retryDelayMs": 3000,
+        "enabled": true
     },
     "hlsFallback": {
         "enabled": true,
@@ -89,9 +109,78 @@
             "penalty": 80,
             "label": "3D"
         },
-        "directLinkBonus": 40
+        "directLinkBonus": 40,
+        "overTvSpeed": {
+            "margin": 0.9,
+            "penalty": 40,
+            "label": "acima da velocidade da TV"
+        }
     },
     "diagnostics": {
         "refreshMs": 1000
+    },
+    "readAhead": {
+        "enabled": true,
+        "maxMb": 64,
+        "minMb": 8,
+        "warmupMb": 4,
+        "reserveMb": 80,
+        "backMb": 4,
+        "joinGapMb": 8,
+        "idleMs": 60000
+    },
+    "doctor": {
+        "enabled": true,
+        "autoSwitch": true,
+        "checkEveryMs": 2000,
+        "minBufferS": 12,
+        "stalledForMs": 45000,
+        "startTimeoutMs": 60000,
+        "maxAutoSwitches": 1,
+        "targetBufferS": 120,
+        "learnTvSpeed": true,
+        "startOnLanWhenHeavy": true,
+        "graceMs": 60000
+    },
+    "sources": {
+        "enabled": true,
+        "hotkey": 404,
+        "maxItems": 10,
+        "loadWaitMs": 8000,
+        "loadingHintAfterMs": 6000,
+        "hintText": "Travou ou demorando? Botão verde: trocar fonte",
+        "loadingHint": true
+    },
+    "settings": {
+        "hotkey": 405
+    },
+    "hints": {
+        "firstRunToast": true
+    },
+    "subtitles": {
+        "enabled": true,
+        "autoPick": true,
+        "avoidSdh": true,
+        "embeddedWaitMs": 25000,
+        "priority": [
+            "embedded:pt-br",
+            "embedded:pt",
+            "embedded:native",
+            "embedded:any",
+            "external:pt-br",
+            "external:pt",
+            "external:native"
+        ],
+        "openSubtitlesUrl": "https://opensubtitles-v3.strem.io",
+        "tracksTimeoutMs": 30000,
+        "tracksRetries": 4,
+        "tracksRetryDelayMs": 8000,
+        "openSubtitles": true,
+        "netflixStyle": true,
+        "autoSync": true,
+        "syncEverySlotS": 600,
+        "syncMinOffsetMs": 300,
+        "syncAfterPlayingS": 20,
+        "syncMinConfidence": 0.5
     }
 }
