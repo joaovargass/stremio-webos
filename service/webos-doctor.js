@@ -29,6 +29,7 @@
     var struggleSince = null;
     var progress = [];
     var race = { videoId: null, list: [], best: null };
+    var pendingResume = null;
     var rates = { tv: { key: 'twk.tvRate', savedAt: 0 }, lan: { key: 'twk.lanRate', savedAt: 0 } };
     rates.tv.value = readRate(rates.tv.key);
     rates.lan.value = readRate(rates.lan.key);
@@ -246,6 +247,10 @@
         // The new source gets its own race once it is loading
         race = { videoId: null, list: [], best: null };
         prepared[currentVideoId()] = false;
+        // The new player opens at the saved library position; keep the one the viewer is at instead
+        var video = document.querySelector('video');
+        var at = video ? video.__lastTime || video.currentTime || 0 : 0;
+        pendingResume = { ms: Math.round(at * 1000), until: Date.now() + 30000 };
         // Replacing the player entry reloads the player and keeps the title page under it for Back
         navigate(stream.deepLinks.player.replace(/^#/, ''), true);
     }
@@ -528,6 +533,13 @@
         calmUntil = 0;
         setTimeout(showFirstRunHint, 4000);
     }
+
+    // A switched source starts where the viewer was: the resume position is handed to the reload hook of the player
+    document.addEventListener('loadstart', function (e) {
+        if (!pendingResume || !(e.target instanceof HTMLMediaElement) || !onPlayer()) return;
+        if (Date.now() < pendingResume.until) e.target.__twkResumeMs = pendingResume.ms;
+        pendingResume = null;
+    }, true);
 
     // The app router navigates with pushState and announces it as historyChange
     window.addEventListener('hashchange', onRouteChange);
