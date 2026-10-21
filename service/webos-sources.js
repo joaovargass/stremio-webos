@@ -273,7 +273,12 @@
     function trackOk(e) {
         // Measure how long OK stays down, so a card can tell a press from a hold
         if (e.keyCode !== KEYS.enter) return;
-        if (e.type === 'keydown' && !press.down) {
+        // A keyup lost to a reload must not block OK: a press older than 10 s counts as released
+        if (e.type === 'keydown' && press.down && Date.now() - press.at < 10000) {
+            // A held OK repeats keydown; only the first press counts, or the repeats would activate the menu it opened
+            e.preventDefault();
+            e.stopImmediatePropagation();
+        } else if (e.type === 'keydown') {
             press.down = true;
             press.at = Date.now();
         } else if (e.type === 'keyup') {
