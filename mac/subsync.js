@@ -188,7 +188,7 @@ http.createServer((req, res) => {
     const sub = url.searchParams.get('sub');
     const at = parseFloat(url.searchParams.get('at') || '0');
     if (!media || !sub) return answer(res, 400, { error: 'media and sub are required' });
-    // One result per subtitle and ten-minute slot, so repeated requests are free
+    // One result per subtitle and audio-window slot, so repeated requests are free
     const key = `${media}|${sub}|${Math.floor(at / WINDOW_S)}`;
     if (cache.has(key)) return answer(res, 200, Object.assign({ cached: true }, cache.get(key)));
     // Jobs run one at a time to keep ffmpeg and the aligner from competing for the CPU
