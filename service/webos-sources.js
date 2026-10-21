@@ -9,9 +9,12 @@
     var list = null;
     var hint = null;
     var items = [];
+    var playing = null;
     var focus = 0;
     var open = false;
     var loadingTimer = null;
+    var liveTimer = null;
+    var REFRESH = { refresh: true };
 
     function element(tag, className, text) {
         // Small DOM helper for the picker
@@ -26,9 +29,17 @@
         return (location.hash || '').indexOf('#/player') === 0;
     }
 
+    function onTitle() {
+        // A title page lists its sources too: a movie, or an episode chosen in a series
+        return /^#\/detail\/[^/]+\/[^/]+/.test(location.hash || '');
+    }
+
     function routeIds() {
-        // The player hash ends with type, meta id and video id
+        // The player hash ends with type, meta id and video id; a title page has type and meta id, and the video id for an episode
         var parts = (location.hash || '').split('/');
+        if (parts[1] === 'detail' && parts.length >= 4) {
+            return { type: decodeURIComponent(parts[2]), metaId: decodeURIComponent(parts[3]), videoId: decodeURIComponent(parts[4] || parts[3]) };
+        }
         if (parts.length < 4) return null;
         return {
             type: decodeURIComponent(parts[parts.length - 3]),
@@ -72,8 +83,10 @@
         var lines = String(stream.description || stream.title || '').split('\n').filter(function (l) { return l; });
         var badge = lines.filter(function (l) { return l.indexOf('⭐') === 0 || l.indexOf('⚠') === 0; })[0] || '';
         var details = lines.filter(function (l) { return l.indexOf('⭐') !== 0 && l.indexOf('⚠') !== 0; }).join(' ');
+        // What the background test measured comes first, since it says whether the source works now
+        var tested = window.__stremioTweaks && window.__stremioTweaks.liveLabel ? window.__stremioTweaks.liveLabel(stream) : '';
         // Cut by whole characters so a flag emoji is never split in half
-        return { title: name + (badge ? '  ' + badge : ''), details: Array.from(details).slice(0, 140).join('') };
+        return { title: name + (badge ? '  ' + badge : ''), details: Array.from((tested ? tested + ' · ' : '') + details).slice(0, 140).join('') };
     }
 
     function createPanel() {
@@ -96,11 +109,16 @@
             return;
         }
         items.forEach(function (stream, i) {
-            var info = describe(stream);
             var row = list.appendChild(element('div', 'twk-src-row'));
             // The pointer focuses a row by hovering and plays it with a click
             row.addEventListener('mouseenter', function () { focus = i; moveFocus(0); });
             row.addEventListener('click', function (e) { e.stopPropagation(); focus = i; choose(); });
+            if (stream === REFRESH) {
+                row.appendChild(element('div', 'twk-src-title', '↻ Testar as fontes de novo'));
+                row.appendChild(element('div', 'twk-src-details', 'Mede de novo a velocidade das melhores fontes e reordena a lista'));
+                return;
+            }
+            var info = describe(stream);
             row.appendChild(element('div', 'twk-src-title', (stream === current ? '▶ ' : '') + info.title));
             row.appendChild(element('div', 'twk-src-details', info.details));
         });
@@ -125,33 +143,59 @@
         list.appendChild(element('div', 'twk-src-empty', 'Buscando fontes...'));
         requestAnimationFrame(function () { panel.classList.add('twk-visible'); });
         window.__twkPanels.opened('sources');
-        Promise.all([ensureStreams(), window.__stremioDoctor ? window.__stremioDoctor.currentStream() : null]).then(function (results) {
+        Promise.all([ensureStreams(), window.__stremioDoctor && onPlayer() ? window.__stremioDoctor.currentStream() : null]).then(function (results) {
             if (!open) return;
-            items = results[0].slice(0, config.maxItems || 10);
-            var current = items.filter(function (s) { return window.__stremioDoctor && window.__stremioDoctor.sameStream(s, results[1]); })[0] || null;
-            render(current);
+            playing = results[1];
+            fill(null);
+            // The background test keeps measuring: the list follows it while open, keeping the focused source
+            liveTimer = setInterval(function () { fill(items[focus]); }, 2000);
         });
+    }
+
+    function fill(keep) {
+        // Rows in the current ranked order, the refresh row first; focus stays on the same source when the order changes
+        var streams = (window.__stremioRankedStreams || []).slice(0, config.maxItems || 10);
+        items = streams.length ? [REFRESH].concat(streams) : [];
+        var current = items.filter(function (s) { return s !== REFRESH && window.__stremioDoctor && window.__stremioDoctor.sameStream(s, playing); })[0] || null;
+        var keepIndex = keep ? items.indexOf(keep) : -1;
+        render(current);
+        if (keepIndex !== -1) {
+            focus = keepIndex;
+            moveFocus(0);
+        } else if (!current && items.length > 1) {
+            focus = 1;
+            moveFocus(0);
+        }
     }
 
     function hide() {
         // Close the picker and give the keys back to the player
         open = false;
+        if (liveTimer) clearInterval(liveTimer);
+        liveTimer = null;
         if (panel) panel.classList.remove('twk-visible');
         window.__twkPanels.closed('sources');
     }
 
     function choose() {
-        // Play the focused source through the doctor so every switch behaves the same
+        // Play the focused source: on the player through the doctor so every switch behaves the same, on a title page as a new entry so Back returns to it
         var stream = items[focus];
+        if (stream === REFRESH) {
+            if (window.__stremioTweaks && window.__stremioTweaks.retest) window.__stremioTweaks.retest();
+            notice('Testando as fontes de novo...');
+            return;
+        }
         hide();
-        if (stream && window.__stremioDoctor) window.__stremioDoctor.playStream(stream, 'Trocando para: ');
+        if (!stream) return;
+        if (onPlayer() && window.__stremioDoctor) return window.__stremioDoctor.playStream(stream, 'Trocando para: ');
+        if (stream.deepLinks && stream.deepLinks.player && window.__stremioHistory) window.__stremioHistory.navigate(stream.deepLinks.player.replace(/^#/, ''));
     }
 
     function onKey(e) {
         // While open the picker owns the arrows, OK and Back; the colour key toggles it on the player
         var code = e.keyCode;
         if (!open) {
-            if (code === config.hotkey && onPlayer()) {
+            if (code === config.hotkey && (onPlayer() || onTitle())) {
                 e.preventDefault();
                 e.stopPropagation();
                 show();
@@ -180,7 +224,9 @@
         // Offer the picker when the first frame does not arrive in time
         if (loadingTimer) clearTimeout(loadingTimer);
         showHint(false);
-        if (!onPlayer()) return hide();
+        // Any route change closes the picker; it belongs to the screen it was opened on
+        hide();
+        if (!onPlayer()) return;
         if (config.loadingHint === false) return;
         loadingTimer = setTimeout(function () {
             var video = document.querySelector('video');
