@@ -407,13 +407,19 @@
         }).catch(function () {});
     }
 
+    function hlsSourceTorrent(src) {
+        // An HLS conversion of a torrent keeps reporting that torrent: its swarm still feeds the picture
+        var match = /[?&]mediaURL=([^&]+)/.exec(src);
+        return match && /\/hlsv2\//.test(src) ? TORRENT_URL.exec(decodeURIComponent(match[1])) : null;
+    }
+
     function tick() {
         // Sample the player, the torrent and the proxy, then evaluate
         if (busy || !config.enabled || !onPlayer()) return;
         var video = document.querySelector('video');
         if (!video) return;
         var src = video.currentSrc || video.src || '';
-        var torrent = TORRENT_URL.exec(src);
+        var torrent = TORRENT_URL.exec(src) || hlsSourceTorrent(src);
         busy = true;
         Promise.all([
             torrent ? fetchJson(torrent[1] + '/' + torrent[2] + '/' + torrent[3] + '/stats.json') : null,
