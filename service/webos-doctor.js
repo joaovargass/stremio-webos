@@ -115,15 +115,28 @@
         return Promise.resolve(window.__stremioRankedStreams || []);
     }
 
+    function resolutionOf(stream) {
+        // Vertical resolution named by the source, 0 when unknown
+        var text = (String(stream.name || '') + ' ' + String(stream.description || stream.title || '')).toLowerCase();
+        return /2160p|\b4k\b|\buhd\b/.test(text) ? 2160 : /1080p/.test(text) ? 1080 : /720p/.test(text) ? 720 : /480p/.test(text) ? 480 : 0;
+    }
+
     function candidates(ranked, current, count) {
         // The next ranked streams after the current one, skipping the ones this video already tried
         var videoId = currentVideoId();
         var tried = state.tried[videoId] || [];
         var index = -1;
         ranked.forEach(function (s, i) { if (index === -1 && sameStream(s, current)) index = i; });
-        return ranked.slice(index + 1).filter(function (s) {
+        var open = ranked.slice(index + 1).filter(function (s) {
             return !sameStream(s, current) && !tried.some(function (t) { return sameStream(s, t); });
-        }).slice(0, count);
+        });
+        var list = open.slice(0, count);
+        // A thin swarm often hits a whole resolution, so one candidate is always the best source of a lower one
+        // The ranked entry carries the release text even when the player reports only the hash
+        var top = index !== -1 ? resolutionOf(ranked[index]) || resolutionOf(current) : current ? resolutionOf(current) : 0;
+        var lower = open.filter(function (s) { var r = resolutionOf(s); return r && top && r < top; })[0];
+        if (count > 1 && lower && list.indexOf(lower) === -1) list[list.length - 1] = lower;
+        return list;
     }
 
     function pickLive(list) {
