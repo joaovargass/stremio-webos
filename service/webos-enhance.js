@@ -258,7 +258,11 @@
         // Simple mode: one "Watch" entry with the best source; the full list stays on the green key
         var best = (window.__stremioRankedStreams || [])[0];
         var simple = config.simple || {};
-        if (!best) return state;
+        if (!best) {
+            // While no playable source arrived, keep only the addons still loading, so links to other services do not flash first
+            var loading = state.streams.filter(function (group) { return group.content && group.content.type === 'Loading'; });
+            return loading.length ? Object.assign({}, state, { streams: loading }) : state;
+        }
         var home = state.streams.filter(function (group) {
             return group.content && group.content.type === 'Ready' && group.content.content.some(function (s) { return s.deepLinks === best.deepLinks; });
         })[0];
