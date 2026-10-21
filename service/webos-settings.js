@@ -12,7 +12,9 @@
         { title: 'Modo simples', column: 0, items: [
             ['simple.enabled', 'Um botão Assistir, sem lista de addons'],
             ['simple.quality', 'Qualidade preferida', ['best', '2160p', '1080p', '720p'], QUALITY_LABELS],
-            ['restart.enabled', 'Botão azul recomeça do início']
+            ['restart.enabled', 'Botão azul recomeça do início'],
+            ['simple.directOpen', 'OK no cartão abre o título (segure para opções)'],
+            ['simple.autoPlayEpisodes', 'Episódio toca direto, sem lista de fontes']
         ] },
         { title: 'Fontes', column: 0, items: [
             ['ranking.enabled', 'Ordenar fontes e marcar a recomendada'],

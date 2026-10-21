@@ -235,6 +235,76 @@
         if (video.currentTime > 30) notice('Retomando de ' + clock(video.currentTime) + ' · botão azul: recomeçar');
     }
 
+    var simple = (window.STREMIO_TWEAKS || {}).simple || {};
+    var press = { down: false, at: 0, held: 0 };
+    var HOLD_MS = simple.holdMs || 500;
+
+    function cardPress(onShort) {
+        // A short OK opens the title at once; an OK held for HOLD_MS keeps the card menu open
+        if (simple.directOpen === false) return;
+        if (!press.down) {
+            if (press.held < HOLD_MS) openTitle(onShort);
+            return;
+        }
+        var watch = setInterval(function () {
+            if (press.down && Date.now() - press.at < HOLD_MS) return;
+            clearInterval(watch);
+            if (!press.down) openTitle(onShort);
+        }, 30);
+    }
+
+    function openTitle(navigateTo) {
+        // Navigate to the title and say once how to reach the card options
+        navigateTo();
+        try {
+            if (localStorage.getItem('twk.hint.cards')) return;
+            localStorage.setItem('twk.hint.cards', '1');
+        } catch (_e) {
+            return;
+        }
+        setTimeout(function () { notice('OK abre o título · segure OK no cartão para mais opções (recomeçar, biblioteca, trailer)'); }, 1200);
+    }
+
+    function trackOk(e) {
+        // Measure how long OK stays down, so a card can tell a press from a hold
+        if (e.keyCode !== KEYS.enter) return;
+        if (e.type === 'keydown' && !press.down) {
+            press.down = true;
+            press.at = Date.now();
+        } else if (e.type === 'keyup') {
+            press.down = false;
+            press.held = Date.now() - press.at;
+        }
+    }
+
+    function autoPlayEpisode() {
+        // An episode chosen in the episode list plays its best source at once; Back then returns to the episode list
+        if (!simple.enabled || simple.autoPlayEpisodes === false || !window.__stremioHistory) return;
+        var entries = window.__stremioHistory.entries();
+        var current = entries[entries.length - 1] || '';
+        var previous = entries[entries.length - 2] || '';
+        var match = /^#\/detail\/series\/([^/?]+)\/([^/?]+)/.exec(current);
+        if (!match || previous.split('?')[0] !== '#/detail/series/' + match[1]) return;
+        var videoId = decodeURIComponent(match[2]);
+        var started = Date.now();
+        var wait = setInterval(function () {
+            // The ranked list of this episode arrives once the addons answered
+            if (location.hash !== current && location.hash.split('?')[0] !== current.split('?')[0]) return clearInterval(wait);
+            var best = window.__stremioRankedFor === videoId ? (window.__stremioRankedStreams || [])[0] : null;
+            if (!best && Date.now() - started < (simple.autoPlayWaitMs || 15000)) return;
+            clearInterval(wait);
+            if (!best) return;
+            var short = window.__stremioTweaks && window.__stremioTweaks.summary ? window.__stremioTweaks.summary(best) : '';
+            notice('Tocando a melhor fonte' + (short ? ': ' + short : '') + ' · outras: botão verde');
+            if (window.__stremioDoctor) window.__stremioDoctor.navigate(best.deepLinks.player.replace(/^#/, ''), true);
+        }, 300);
+    }
+
+    window.__twkCardPress = cardPress;
+    window.addEventListener('keydown', trackOk, true);
+    window.addEventListener('keyup', trackOk, true);
+    window.addEventListener('historyChange', autoPlayEpisode);
+
     if (restart.enabled !== false) {
         window.addEventListener('keydown', function (e) {
             if (e.keyCode !== restart.hotkey || open) return;

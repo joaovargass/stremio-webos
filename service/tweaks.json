@@ -156,7 +156,11 @@
         ],
         "playLabel": "Assistir",
         "moreHint": "Outras fontes: botão verde",
-        "subtitleChoices": 3
+        "subtitleChoices": 3,
+        "directOpen": true,
+        "holdMs": 500,
+        "autoPlayEpisodes": true,
+        "autoPlayWaitMs": 15000
     },
     "diagnostics": {
         "refreshMs": 1000
