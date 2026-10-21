@@ -221,15 +221,15 @@
         return simple.enabled ? simplify(ranked) : ranked;
     }
 
-    function summary(stream) {
-        // One clean line: resolution, audio, size and seeders
+    function summary(stream, compact) {
+        // One clean line: resolution, audio, size and, unless compact, seeders
         var text = streamText(stream);
         var resolution = parseResolution(text);
         var audio = /atmos/.test(text) ? 'Atmos' : /truehd/.test(text) ? 'TrueHD' : /dts/.test(text) ? 'DTS' : /ddp|dd\+|eac3|e-ac-3/.test(text) ? 'Dolby Digital Plus' : /\bac3\b|\bdd\b|dd5/.test(text) ? 'Dolby Digital' : /aac/.test(text) ? 'AAC' : '';
         var channels = /7\.1/.test(text) ? '7.1' : /5\.1|6ch/.test(text) ? '5.1' : '';
         var size = /💾\s*([\d.]+\s*[tgm]b)/i.exec(text);
         var seeds = parseSeeds(text);
-        return [resolution === 2160 ? '4K' : resolution ? resolution + 'p' : '', [audio, channels].filter(Boolean).join(' '), size ? size[1].toUpperCase() : '', seeds !== null ? seeds + ' seeds' : '']
+        return [resolution === 2160 ? '4K' : resolution ? resolution + 'p' : '', [audio, channels].filter(Boolean).join(' '), size ? size[1].toUpperCase() : '', seeds !== null && !compact ? seeds + ' seeds' : '']
             .filter(Boolean).join(' · ');
     }
 
@@ -244,7 +244,8 @@
         if (!home) return state;
         var entry = Object.assign({}, best, {
             name: simple.playLabel || 'Assistir',
-            title: summary(best),
+            // The stream card has room for one short line; the full summary goes to the details panel
+            title: summary(best, true),
             description: summary(best) + (simple.moreHint ? '\n' + simple.moreHint : '')
         });
         return Object.assign({}, state, { streams: [Object.assign({}, home, { content: Object.assign({}, home.content, { content: [entry] }) })] });
