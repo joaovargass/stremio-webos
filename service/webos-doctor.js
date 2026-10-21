@@ -22,6 +22,7 @@
     var prepared = {};
     var struggleSince = null;
     var progress = [];
+    var race = { videoId: null, list: [], best: null };
     var learned = readTvRate();
     var learnedSavedAt = 0;
 
@@ -166,7 +167,9 @@
         prepared[videoId] = true;
         var fraction = video.duration ? video.currentTime / video.duration : 0;
         Promise.all([rankedStreams(), currentStream()]).then(function (results) {
-            candidates(results[0] || [], results[1], config.raceCandidates || 2).forEach(function (next) {
+            var list = candidates(results[0] || [], results[1], config.raceCandidates || 2);
+            race = { videoId: videoId, list: list, best: null };
+            list.forEach(function (next) {
                 console.info('[doctor] preparing a source in the background', next.infoHash || next.url, Math.round(fraction * 100) + '%');
                 window.__stremioTweaks.prewarm(next, fraction);
             });
@@ -187,6 +190,9 @@
         toast(prefix + title.slice(0, 70), 5000);
         stalledSince = null;
         loadingSince = null;
+        // The new source gets its own race once it is loading
+        race = { videoId: null, list: [], best: null };
+        prepared[currentVideoId()] = false;
         // Replacing the player entry reloads the player and keeps the title page under it for Back
         navigate(stream.deepLinks.player.replace(/^#/, ''), true);
     }
@@ -239,11 +245,16 @@
         return true;
     }
 
+    function calmFor() {
+        // Before the first picture nobody watches, so the calm period is short; during playback it stays patient
+        return state.started[currentVideoId()] ? (config.graceMs || 60000) : (config.startGraceMs || 20000);
+    }
+
     function remedy(video, hash, proxy, reason) {
         // Try the LAN server for this video first, then the next ranked source, then wait before judging again
         state.status = 'trocando';
         state.reason = reason;
-        calmUntil = Date.now() + (config.graceMs || 60000);
+        calmUntil = Date.now() + calmFor();
         if (hintShown && window.__stremioSources && window.__stremioSources.hint) window.__stremioSources.hint(false);
         hintShown = false;
         if (proxy && useRemoteServer(video, hash, proxy, reason)) return;
@@ -296,7 +307,10 @@
         describe(slow, low, needed, !!hash);
         // While playback struggles, get the next ranked source ready at the same position so a switch starts at once
         struggleSince = (slow && low) || stalledSince || loadingSince || choppy ? struggleSince || now : null;
-        if (config.prewarmNext !== false && struggleSince && now - struggleSince > (config.prewarmAfterMs || 15000)) prepareNext(video);
+        // A slow start races the next sources almost at once; trouble during playback waits a little longer
+        var waitedMs = loadingSince ? now - loadingSince : 0;
+        var raceNow = waitedMs > (config.raceAfterMs || 5000) || (struggleSince && now - struggleSince > (config.prewarmAfterMs || 15000));
+        if (config.prewarmNext !== false && raceNow) prepareNext(video);
         // A short freeze only earns a hint, never an action; only the hint shown here is hidden here
         var stalledMs = stalledSince ? now - stalledSince : 0;
         var wantHint = stalledMs > 10000;
@@ -307,9 +321,9 @@
         var heavy = bitrate && learned.n >= 60 && bitrate > learned.rate * 1.1;
         if (config.startOnLanWhenHeavy !== false && loadingSince && onTv && heavy && proxy.fallback && !rerouted[hash]) {
             // Start sources the TV clearly cannot sustain on the LAN server, before any picture is shown
-            calmUntil = now + (config.graceMs || 60000);
+            calmUntil = now + calmFor();
             useRemoteServer(video, hash, proxy, 'acima da velocidade da TV');
-        } else if (loadingSince && now - loadingSince > (config.startTimeoutMs || 60000)) {
+        } else if (loadingSince && (waitedMs > (config.startTimeoutMs || 60000) || (waitedMs > (config.quickStartMs || 20000) && race.best && race.videoId === currentVideoId()))) {
             remedy(video, hash, proxy, 'não começou');
         } else if (stalledMs > (config.stalledForMs || 45000) || choppy) {
             progress = [];
@@ -355,6 +369,18 @@
         if (state.status !== 'ok' && state.exhausted[currentVideoId()]) state.reason += ', sem outra troca automática';
     }
 
+    function raceStatus(video) {
+        // While a start waits, check which prepared source is really downloading, so a switch can be quick and certain
+        if (!race.list.length || race.videoId !== currentVideoId() || video.readyState >= 2) return null;
+        return pickLive(race.list).then(function (best) {
+            // A direct link needs no swarm to start
+            if (!best.infoHash) { race.best = best; return null; }
+            return fetchJson('/' + best.infoHash + '/' + (best.fileIdx || 0) + '/stats.json').then(function (st) {
+                race.best = st && (st.downloadSpeed || 0) > 0 ? best : null;
+            });
+        }).catch(function () {});
+    }
+
     function tick() {
         // Sample the player, the torrent and the proxy, then evaluate
         if (busy || !config.enabled || !onPlayer()) return;
@@ -365,7 +391,8 @@
         busy = true;
         Promise.all([
             torrent ? fetchJson(torrent[1] + '/' + torrent[2] + '/' + torrent[3] + '/stats.json') : null,
-            fetchJson('/__tweaks/status')
+            fetchJson('/__tweaks/status'),
+            raceStatus(video)
         ]).then(function (results) {
             busy = false;
             evaluate(video, results[0], results[1], torrent ? torrent[2].toLowerCase() : null);
