@@ -127,7 +127,7 @@
         var cache = info.cache === 0 ? 'sem cache' : info.cache ? megabytes(info.cache) : '?';
         setText('limit', (info.limit ? mbps(info.limit) : '?') + ' / ' + cache);
         var candidates = proxy && proxy.candidates ? Object.keys(proxy.candidates).map(function (key) {
-            return key.replace(/^https?:\/\//, '').replace(/:\d+\/?$/, '') + (proxy.candidates[key] ? ' ✓' : ' ✕');
+            return key.replace(/^https?:\/\//, '').replace(/\/$/, '') + (proxy.candidates[key] ? ' ✓' : ' ✕');
         }).join('  ') : '-';
         setText('candidates', candidates);
     }
