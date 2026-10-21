@@ -285,6 +285,8 @@
         "syncMinOffsetMs": 300,
         "syncAfterPlayingS": 20,
         "syncMinConfidence": 0.5,
+        "syncOnTv": true,
+        "tvSync": { "windowS": 240, "leadS": 60, "maxOffsetS": 60, "minCues": 16, "agreeS": 0.3, "goodProminence": 10, "timeoutMs": 180000 },
         "cycleKey": 403,
         "convert": true,
         "allowHttp": false,

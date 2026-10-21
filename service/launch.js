@@ -14,6 +14,7 @@ var util = require('util');
 var Service = require('webos-service');
 var ReadAhead = require('./readahead');
 var AnswerCache = require('./answercache');
+var subsync = require('./subsync');
 var subtitles = require('./subtitles');
 
 var logLines = [];
@@ -36,6 +37,8 @@ var touched = {};
 var mirrors = {};
 var mirrorChecks = {};
 var subtitleCache = [];
+var syncQueue = Promise.resolve();
+var syncResults = {};
 var ownServer = false;
 var hlsSessions = {};
 var lastScan = 0;
@@ -142,6 +145,7 @@ function serveOverrides(req, res) {
         tweaks.subtitles = tweaks.subtitles || {};
         if (typeof overrides['subtitles.convert'] === 'boolean') tweaks.subtitles.convert = overrides['subtitles.convert'];
         if (typeof overrides['subtitles.allowHttp'] === 'boolean') tweaks.subtitles.allowHttp = overrides['subtitles.allowHttp'];
+        if (typeof overrides['subtitles.syncOnTv'] === 'boolean') tweaks.subtitles.syncOnTv = overrides['subtitles.syncOnTv'];
         tweaks.devMode = tweaks.devMode || {};
         if (typeof overrides['devMode.keepAlive'] === 'boolean') tweaks.devMode.keepAlive = overrides['devMode.keepAlive'];
         if (typeof overrides['answerCache.enabled'] === 'boolean') answerSettings.enabled = overrides['answerCache.enabled'];
@@ -991,15 +995,57 @@ function subsyncServer(source) {
     return url.parse('http://' + urlHost(transcoder.hostname) + ':' + (info.subsyncPort || tweaks.servers.subsyncPort) + '/');
 }
 
+function answerJson(res, status, body) {
+    // JSON answer for the page
+    res.writeHead(status, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(body));
+}
+
+function syncOnTv(query, source, done) {
+    // Measure the subtitle delay with the TV ffmpeg, one job at a time, reusing a result of the same subtitle and audio slot
+    var settings = (tweaks.subtitles || {}).tvSync || {};
+    var key = query.media + '|' + query.sub + '|' + Math.floor(query.at / settings.windowS);
+    if (syncResults[key]) return done(null, Object.assign({ cached: true }, syncResults[key]));
+    var from = originalSubtitle(query.sub);
+    // The TV reads the video from the server holding it, not through this proxy and its read-ahead window
+    var reader = url.parse(candidates.filter(function(c) { return isLocal(url.parse(c)); })[0] || 'http://127.0.0.1:11470/');
+    var media = rewriteLoopback(String(query.media), reader, source);
+    syncQueue = syncQueue.then(function() {
+        return new Promise(function(resolve) { subtitleVtt(from, resolve); }).then(function(vtt) {
+            if (!vtt) throw new Error('subtitle unavailable or unreadable');
+            return subsync.sync(Object.assign({ ffmpeg: process.env.FFMPEG_BIN, media: media, subtitle: vtt, at: query.at }, settings));
+        }).then(function(result) {
+            // Only the latest results are kept, enough for the slots of the videos being watched
+            Object.keys(syncResults).slice(0, -20).forEach(function(old) { delete syncResults[old]; });
+            syncResults[key] = result;
+            console.log('subsync on the TV', JSON.stringify(result));
+            done(null, result);
+        }, function(err) {
+            console.warn('subsync on the TV failed', err.message);
+            done(err);
+        });
+    });
+}
+
 function serveSubsync(req, res) {
-    // Ask the LAN sync service to align a subtitle with the audio around the playback position
+    // Align a subtitle with the audio around the playback position on the TV; the LAN sync service only answers when the TV cannot or is unsure
     var source = sourceFor(req.url);
-    var target = subsyncServer(source);
-    if (!target) {
-        res.writeHead(503, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ error: 'no sync server available' }));
-    }
-    proxyRequest(req, res, target, source, req.url.replace('/__tweaks/subsync', '/sync'));
+    var query = url.parse(req.url, true).query;
+    query.at = parseFloat(query.at || '0');
+    var lan = subsyncServer(source);
+    var askLan = function(status, error) {
+        if (!lan) return answerJson(res, status, { error: error });
+        proxyRequest(req, res, lan, source, req.url.replace('/__tweaks/subsync', '/sync'));
+    };
+    var subs = tweaks.subtitles || {};
+    if (!query.media || !query.sub) return answerJson(res, 400, { error: 'media and sub are required' });
+    if (subs.syncOnTv === false || !fs.existsSync(process.env.FFMPEG_BIN)) return askLan(503, 'no sync available');
+    syncOnTv(query, source, function(err, result) {
+        if (err) return askLan(500, err.message);
+        if (result.confidence >= (subs.syncMinConfidence || 0.5) || !lan) return answerJson(res, 200, result);
+        console.log('subsync on the TV unsure (' + result.confidence + '), asking the LAN sync service');
+        askLan(200);
+    });
 }
 
 function serveDeviceInfo(res) {

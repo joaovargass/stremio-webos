@@ -40,6 +40,7 @@
             ['subtitles.avoidSdh', 'Evitar legendas para surdos (SDH)'],
             ['subtitles.netflixStyle', 'Legendas no estilo Netflix'],
             ['subtitles.autoSync', 'Sincronizar legendas externas'],
+            ['subtitles.syncOnTv', 'Sincronizar na própria TV (o Mac só ajuda)'],
             ['subtitles.convert', 'Corrigir a formatação das legendas na TV'],
             ['subtitles.allowHttp', 'Aceitar legendas sem conexão segura (HTTPS)']
         ] },
