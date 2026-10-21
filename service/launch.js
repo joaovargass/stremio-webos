@@ -22,6 +22,7 @@ var TORRENT_FILE_PATH = /^\/[0-9a-f]{40}\/\d+(\?|$)/i;
 var HLS_PATH = /^\/hlsv2\//i;
 var INFO_HASH = /(?:^|\/|%2F)([0-9a-f]{40})(?=\/|%2F|$)/i;
 var routes = {};
+var seeded = {};
 var lastScan = 0;
 var readAhead = new ReadAhead(tweaks.readAhead || { enabled: false });
 var PROXY_LOOPBACK = /http(%3A|:)(%2F|\/)(%2F|\/)127\.0\.0\.1(%3A|:)8080/gi;
@@ -128,6 +129,36 @@ function serveRoute(reqUrl, res) {
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ hash: hash, server: target, seamless: seamless, routes: routes }));
+}
+
+function once(fn) {
+    // Wrap a callback so a timer, an answer and an error cannot run it twice
+    var called = false;
+    return function() {
+        if (called) return;
+        called = true;
+        fn.apply(null, arguments);
+    };
+}
+
+function seedPeers(hash, server, done) {
+    // Create a torrent on a server with the configured peer sources before anything else opens it there, once per server
+    var boost = tweaks.peerBoost || {};
+    var key = hash + '@' + server.host;
+    var finish = once(done);
+    if (seeded[key] || !tweaks.trackers || boost.enabled === false) return finish();
+    seeded[key] = true;
+    var sources = tweaks.trackers.map(function(t) { return 'tracker:' + t; }).concat(['dht:' + hash]);
+    var body = JSON.stringify({ torrent: { infoHash: hash }, peerSearch: Object.assign({ sources: sources }, tweaks.peerSearch) });
+    var req = http.request({ hostname: server.hostname, port: server.port, path: '/' + hash + '/create', method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } }, function(res) {
+        res.resume();
+        finish();
+    });
+    // The server answers only once the torrent metadata is known; reaching it first is what counts, so the caller goes on shortly after
+    setTimeout(finish, boost.waitMs || 500);
+    req.setTimeout((tweaks.prewarm || {}).timeoutMs || 120000, function() { req.destroy(); });
+    req.on('error', function() { finish(); });
+    req.end(body);
 }
 
 function loadTweaks() {
@@ -294,7 +325,10 @@ function proxyToStreaming(req, res) {
     var source = sourceFor(req.url);
     if (TORRENT_FILE_PATH.test(req.url)) {
         trackStream(res);
-        return readAhead.handle(req, res, source, function() { proxyRequest(req, res, source, source); });
+        // The first request of a torrent on a server creates it there with the configured peer sources
+        return seedPeers(INFO_HASH.exec(req.url)[1].toLowerCase(), source, function() {
+            readAhead.handle(req, res, source, function() { proxyRequest(req, res, source, source); });
+        });
     }
     if (STREAM_PATH.test(req.url)) trackStream(res);
     if (!HLS_PATH.test(req.url)) return proxyRequest(req, res, source, source);

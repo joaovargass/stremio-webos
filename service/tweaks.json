@@ -41,11 +41,13 @@
         "max": 200
     },
     "peerBoost": {
-        "enabled": true
+        "enabled": true,
+        "waitMs": 500
     },
     "prewarm": {
         "enabled": true,
-        "warmBytes": 1048576
+        "warmBytes": 1048576,
+        "timeoutMs": 120000
     },
     "stallRetry": {
         "maxRetries": 10,
