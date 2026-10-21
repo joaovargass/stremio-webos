@@ -4,7 +4,9 @@ The webOS build sets HLS_V2_DISABLED at start, so its /hlsv2 router is never mou
 /hlsv2 requests fall into older routes ("Cannot parse path", 415). The TV app ships its own
 small ffmpeg and needs that converter for DTS/TrueHD audio and pictures the TV cannot decode.
 The mp4 track reader also prints every box it parses, Buffers included, on each track listing,
-which costs TV CPU and buries the service log.
+which costs TV CPU and buries the service log. Every new torrent starts a cache cleanup; when
+several start together, two cleanups delete the same leftover file and the second one logged
+the missing file as an error, although the file being gone is the goal.
 
 Usage: python3 tools/patch-webos-server.py path/to/server.js
 """
@@ -19,6 +21,10 @@ PATCHES = [
     (
         "return console.log(a),!u&&i?",
         "return!u&&i?",
+    ),
+    (
+        "deleted++,fs.unlink(f.path,(function(e){e&&console.error(e)}))",
+        'deleted++,fs.unlink(f.path,(function(e){e&&"ENOENT"!==e.code&&console.error(e)}))',
     ),
 ]
 
