@@ -33,6 +33,7 @@ var touched = {};
 var mirrors = {};
 var mirrorChecks = {};
 var subtitleCache = [];
+var ownServer = false;
 var lastScan = 0;
 var readAhead = new ReadAhead(tweaks.readAhead || { enabled: false });
 readAhead.mirrorsFor = mirrorsFor;
@@ -402,6 +403,7 @@ function seedPeers(hash, server, done) {
     var boost = tweaks.peerBoost || {};
     var key = hash + '@' + server.host;
     var finish = once(done);
+    if (ownServer && isLocal(server)) ensureCacheDir(hash);
     if (seeded[key] || !tweaks.trackers || boost.enabled === false) return finish();
     seeded[key] = true;
     var sources = tweaks.trackers.map(function(t) { return 'tracker:' + t; }).concat(['dht:' + hash]);
@@ -760,6 +762,30 @@ http.createServer(function(req, res) {
 process.env.FFMPEG_BIN = path.join(__dirname, 'bin', 'ffmpeg');
 process.env.FFPROBE_BIN = path.join(__dirname, 'bin', 'ffprobe');
 
+function cacheRoot() {
+    // Where the bundled server keeps one folder per torrent
+    return path.join(process.env.APP_PATH, 'stremio-cache');
+}
+
+function ensureCacheDir(hash) {
+    // With the disk cache off the server never creates the torrent folder, then fails to save the torrent metadata there; saved metadata also reopens a title without asking peers again
+    try { fs.mkdirSync(path.join(cacheRoot(), hash), { recursive: true }); } catch (err) { console.error('torrent folder not created', hash, err.message); }
+}
+
+function pruneCache(keep) {
+    // Keep the metadata of the most recent torrents only, so the small app partition never fills up
+    var root = cacheRoot();
+    var dirs = [];
+    try {
+        dirs = fs.readdirSync(root).map(function(name) { return { name: name, at: fs.statSync(path.join(root, name)).mtimeMs }; });
+    } catch (_) {
+        return;
+    }
+    dirs.sort(function(a, b) { return b.at - a.at; }).slice(keep).forEach(function(dir) {
+        try { fs.rmSync(path.join(root, dir.name), { recursive: true, force: true }); } catch (err) { console.error('old torrent folder not removed', dir.name, err.message); }
+    });
+}
+
 function seedServerSettings() {
     // A TV has none of the GPUs the bundled server tests at start, and an update replaces its saved settings; saying so up front skips the failing tests
     var file = path.join(process.env.APP_PATH, 'server-settings.json');
@@ -774,6 +800,8 @@ function seedServerSettings() {
 probe('http://127.0.0.1:11470/', function(running) {
     if (!running) {
         seedServerSettings();
+        pruneCache((tweaks.servers || {}).keepTorrentFolders || 30);
+        ownServer = true;
         require('./server.js');
     }
     selectUpstream();
