@@ -234,6 +234,7 @@
             "external:native"
         ],
         "openSubtitlesUrl": "https://opensubtitles-v3.strem.io",
+        "lookupTimeoutMs": 15000,
         "tracksTimeoutMs": 30000,
         "tracksRetries": 4,
         "tracksRetryDelayMs": 8000,

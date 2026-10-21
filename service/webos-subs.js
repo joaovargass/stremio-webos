@@ -120,9 +120,9 @@
         var hints = stream.behaviorHints || {};
         var server = (window.__STREMIO_SERVER_URL__ || 'http://127.0.0.1:11470').replace(/\/$/, '');
         var media = stream.infoHash ? server + '/' + stream.infoHash + '/' + (stream.fileIdx || 0) : stream.url;
-        var hashPromise = media ?
-            fetch(server + '/opensubHash?videoUrl=' + encodeURIComponent(media)).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }) :
-            Promise.resolve(null);
+        var fetchJson = window.__stremioDoctor.fetchJson;
+        // The hash needs file data, which a cold torrent may not have for minutes; past the limit the filename alone is used
+        var hashPromise = media ? fetchJson(server + '/opensubHash?videoUrl=' + encodeURIComponent(media), config.lookupTimeoutMs) : Promise.resolve(null);
         hashPromise.then(function (hash) {
             var extras = [];
             if (hash && hash.result) {
@@ -132,7 +132,7 @@
             if (hints.filename) extras.push('filename=' + encodeURIComponent(hints.filename));
             var target = config.openSubtitlesUrl.replace(/\/$/, '') + '/subtitles/' + path.type + '/' + encodeURIComponent(path.id) +
                 (extras.length ? '/' + extras.join('&') : '') + '.json';
-            return fetch(target).then(function (r) { return r.json(); });
+            return fetchJson(target, config.lookupTimeoutMs);
         }).then(function (data) {
             extraCache[key] = ((data && data.subtitles) || []).map(function (s) {
                 return { id: 'tweaks-os-' + s.id, url: s.url, lang: s.lang, origin: 'OpenSubtitles', m: s.m, releaseGroup: s.releaseGroup, subtitleFileName: s.subtitleFileName, fpsMilli: s.fpsMilli };
