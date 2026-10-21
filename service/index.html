@@ -37,7 +37,9 @@
                 'servers.useLan': (tweaks.servers || {}).useLan !== false,
                 'readAhead.enabled': (tweaks.readAhead || {}).enabled !== false,
                 'peerBoost.enabled': (tweaks.peerBoost || {}).enabled !== false,
-                'readAhead.mergeSources': (tweaks.readAhead || {}).mergeSources !== false
+                'readAhead.mergeSources': (tweaks.readAhead || {}).mergeSources !== false,
+                'subtitles.convert': (tweaks.subtitles || {}).convert !== false,
+                'subtitles.allowHttp': (tweaks.subtitles || {}).allowHttp === true
             }));
         })(window.STREMIO_TWEAKS);
     </script>

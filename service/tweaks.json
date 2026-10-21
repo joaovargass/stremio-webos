@@ -258,6 +258,10 @@
         "syncMinOffsetMs": 300,
         "syncAfterPlayingS": 20,
         "syncMinConfidence": 0.5,
-        "cycleKey": 403
+        "cycleKey": 403,
+        "convert": true,
+        "allowHttp": false,
+        "convertTimeoutMs": 20000,
+        "convertMaxBytes": 4194304
     }
 }

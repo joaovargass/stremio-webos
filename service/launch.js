@@ -3,12 +3,14 @@ require('module').Module._initPaths();
 process.env.APP_PATH = process.env.APP_PATH || __dirname;
 
 var http = require('http');
+var https = require('https');
 var fs = require('fs');
 var os = require('os');
 var path = require('path');
 var url = require('url');
 var Service = require('webos-service');
 var ReadAhead = require('./readahead');
+var subtitles = require('./subtitles');
 
 var tweaks = loadTweaks();
 var candidates = tweaks.servers.candidates;
@@ -26,6 +28,7 @@ var seeded = {};
 var touched = {};
 var mirrors = {};
 var mirrorChecks = {};
+var subtitleCache = [];
 var lastScan = 0;
 var readAhead = new ReadAhead(tweaks.readAhead || { enabled: false });
 readAhead.mirrorsFor = mirrorsFor;
@@ -73,6 +76,9 @@ function serveOverrides(req, res) {
         if (typeof overrides['readAhead.enabled'] === 'boolean') readAhead.config.enabled = overrides['readAhead.enabled'];
         if (typeof overrides['peerBoost.enabled'] === 'boolean') tweaks.peerBoost = Object.assign({}, tweaks.peerBoost, { enabled: overrides['peerBoost.enabled'] });
         if (typeof overrides['readAhead.mergeSources'] === 'boolean') readAhead.config.mergeSources = overrides['readAhead.mergeSources'];
+        tweaks.subtitles = tweaks.subtitles || {};
+        if (typeof overrides['subtitles.convert'] === 'boolean') tweaks.subtitles.convert = overrides['subtitles.convert'];
+        if (typeof overrides['subtitles.allowHttp'] === 'boolean') tweaks.subtitles.allowHttp = overrides['subtitles.allowHttp'];
         if (!lanAllowed()) {
             routes = {};
             selectUpstream();
@@ -264,6 +270,88 @@ function serveMirror(reqUrl, res) {
     var started = valid && verifyMirror(primaryPath, other, parseInt(query.widx, 10) || 0);
     res.writeHead(valid ? 202 : 400, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ file: primaryPath, checking: !!started, mirrors: (mirrors[primaryPath] || []).map(function(m) { return m.path; }) }));
+}
+
+function isPrivateHost(hostname) {
+    // Addresses that never leave the home network, where plain http is the only option the servers offer
+    return /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|\[::1\])/.test(hostname || '');
+}
+
+function subtitleTargets(from) {
+    // Public subtitles are read over https only; plain http stays for the home network or when the viewer allows it
+    var parsed = url.parse(from);
+    if (parsed.protocol !== 'http:' || isPrivateHost(parsed.hostname)) return [from];
+    var secure = 'https:' + from.slice(5);
+    return (tweaks.subtitles || {}).allowHttp ? [secure, from] : [secure];
+}
+
+function fetchFile(target, redirects, done) {
+    // GET a small file over http or https, following redirects that never downgrade to plain http; done gets the body or null
+    var settings = tweaks.subtitles || {};
+    var finish = once(done);
+    var parsed = url.parse(target);
+    var client = parsed.protocol === 'https:' ? https : http;
+    var req = client.get(Object.assign(parsed, { headers: { 'User-Agent': 'Stremio', 'Accept-Encoding': 'gzip' } }), function(res) {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirects > 0) {
+            res.resume();
+            var next = url.resolve(target, res.headers.location);
+            var downgrade = parsed.protocol === 'https:' && url.parse(next).protocol !== 'https:';
+            return downgrade && !settings.allowHttp ? finish(null) : fetchFile(next, redirects - 1, finish);
+        }
+        if (res.statusCode !== 200) {
+            res.resume();
+            return finish(null);
+        }
+        var parts = [];
+        var size = 0;
+        res.on('data', function(part) {
+            size += part.length;
+            // A subtitle file is small; anything bigger is not one and must not fill the TV memory
+            if (size > (settings.convertMaxBytes || 4194304)) {
+                req.destroy();
+                return finish(null);
+            }
+            parts.push(part);
+        });
+        res.on('end', function() { finish(Buffer.concat(parts)); });
+        res.on('error', function() { finish(null); });
+    });
+    req.setTimeout(settings.convertTimeoutMs || 20000, function() { req.destroy(); });
+    req.on('error', function() { finish(null); });
+}
+
+function convertSubtitles(targets, done) {
+    // Try each address in turn and convert the first file that reads as subtitles
+    if (!targets.length) return done(null);
+    fetchFile(targets[0], 5, function(body) {
+        var vtt = null;
+        try { vtt = body ? subtitles.toVtt(body) : null; } catch (err) { console.warn('subtitles unreadable', targets[0], err.message); }
+        if (vtt) return done(vtt);
+        convertSubtitles(targets.slice(1), done);
+    });
+}
+
+function serveSubtitles(req, res) {
+    // Convert an external subtitle to clean WebVTT on the TV, keeping the last few for player reloads
+    var from = String(url.parse(req.url, true).query.from || '');
+    if (!/^https?:\/\//i.test(from)) {
+        res.writeHead(400);
+        return res.end();
+    }
+    var cached = subtitleCache.filter(function(entry) { return entry.from === from; })[0];
+    var send = function(vtt) {
+        if (!vtt) {
+            res.writeHead(502, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: 'subtitle unavailable or unreadable' }));
+        }
+        res.writeHead(200, { 'Content-Type': 'text/vtt; charset=utf-8' });
+        res.end(vtt);
+    };
+    if (cached) return send(cached.vtt);
+    convertSubtitles(subtitleTargets(from), function(vtt) {
+        if (vtt) subtitleCache = [{ from: from, vtt: vtt }].concat(subtitleCache).slice(0, 6);
+        send(vtt);
+    });
 }
 
 function once(fn) {
@@ -580,6 +668,7 @@ http.createServer(function(req, res) {
     if (urlPath === '/__tweaks/route') return serveRoute(req.url, res);
     if (urlPath === '/__tweaks/warm') return serveWarm(req.url, res);
     if (urlPath === '/__tweaks/mirror') return serveMirror(req.url, res);
+    if (urlPath === '/subtitles.vtt' && (tweaks.subtitles || {}).convert !== false) return serveSubtitles(req, res);
     if (urlPath === '/__tweaks/subsync') return serveSubsync(req, res);
     if (urlPath === '/__tweaks/overrides' && req.method === 'POST') return serveOverrides(req, res);
     serveStatic(urlPath, res, function() { proxyToStreaming(req, res); });

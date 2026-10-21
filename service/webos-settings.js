@@ -38,7 +38,9 @@
             ['subtitles.openSubtitles', 'Buscar no OpenSubtitles'],
             ['subtitles.avoidSdh', 'Evitar legendas para surdos (SDH)'],
             ['subtitles.netflixStyle', 'Legendas no estilo Netflix'],
-            ['subtitles.autoSync', 'Sincronizar legendas externas']
+            ['subtitles.autoSync', 'Sincronizar legendas externas'],
+            ['subtitles.convert', 'Corrigir a formatação das legendas na TV'],
+            ['subtitles.allowHttp', 'Aceitar legendas sem conexão segura (HTTPS)']
         ] },
         { title: 'TV e rede', column: 0, items: [
             ['readAhead.enabled', 'Buffer extra na memória da TV'],
