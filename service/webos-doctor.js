@@ -18,6 +18,7 @@
     var loadingSince = null;
     var busy = false;
     var rerouted = {};
+    var lanLost = {};
     var learned = readTvRate();
     var learnedSavedAt = 0;
 
@@ -103,8 +104,10 @@
                 // Out of automatic attempts: tell the viewer once what can still help
                 if (!state.exhausted[videoId]) {
                     state.exhausted[videoId] = true;
-                    var lan = window.STREMIO_TWEAKS && window.STREMIO_TWEAKS.servers && window.STREMIO_TWEAKS.servers.useLan === false;
-                    toast('Nenhuma fonte rápida o bastante agora. ' + (lan ? 'Ligue "Usar o servidor do Mac" (tecla amarela) ou escolha' : 'Escolha') + ' outra fonte (tecla verde)', 9000);
+                    var lanOff = window.STREMIO_TWEAKS && window.STREMIO_TWEAKS.servers && window.STREMIO_TWEAKS.servers.useLan === false;
+                    // Name the missing Mac when the switch is on but no LAN server answers
+                    var help = lanOff ? 'Ligue "Usar o servidor do Mac" (tecla amarela) ou escolha' : state.lanFallback ? 'Escolha' : 'Ligue o Mac ou escolha';
+                    toast('Nenhuma fonte rápida o bastante agora. ' + help + ' outra fonte (tecla verde)', 9000);
                 }
                 return false;
             }
@@ -214,6 +217,13 @@
         var ramBytes = ra && ra.active ? ra.aheadBytes : 0;
         // Remember whether any server can convert to HLS, so recovery skips a conversion that cannot work
         if (proxy) state.transcoder = proxy.transcoder;
+        if (proxy) state.lanFallback = proxy.fallback;
+        // A video moved to the Mac goes back to the TV when the Mac stops answering; tell the viewer once
+        var routedTo = hash && proxy && (proxy.routes || {})[hash];
+        if (routedTo && (proxy.candidates || {})[routedTo] === false && !lanLost[hash]) {
+            lanLost[hash] = true;
+            toast('O Mac parou de responder: este vídeo voltou para a TV', 6000);
+        }
         state.playerBufferS = playerBuffer(video);
         state.ramBufferS = needed ? ramBytes / needed : 0;
         state.totalBufferS = state.playerBufferS + state.ramBufferS;
