@@ -72,7 +72,8 @@
         var lines = String(stream.description || stream.title || '').split('\n').filter(function (l) { return l; });
         var badge = lines.filter(function (l) { return l.indexOf('⭐') === 0 || l.indexOf('⚠') === 0; })[0] || '';
         var details = lines.filter(function (l) { return l.indexOf('⭐') !== 0 && l.indexOf('⚠') !== 0; }).join(' ');
-        return { title: name + (badge ? '  ' + badge : ''), details: details.slice(0, 140) };
+        // Cut by whole characters so a flag emoji is never split in half
+        return { title: name + (badge ? '  ' + badge : ''), details: Array.from(details).slice(0, 140).join('') };
     }
 
     function createPanel() {
