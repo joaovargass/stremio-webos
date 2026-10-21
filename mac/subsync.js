@@ -8,7 +8,8 @@
 // (framerate drift included) and confidence is the aligner score per 10 ms audio frame
 // (about 0.9 for a matching subtitle, about 0.2 for an unrelated one). Only Node built-ins are used.
 //
-// Env: SUBSYNC_PORT (11481), FFMPEG_BIN, FFS_BIN, SUBSYNC_WINDOW_S (240), SUBSYNC_LEAD_S (60), SUBSYNC_MAX_OFFSET_S (60)
+// Env: SUBSYNC_PORT (11481), FFMPEG_BIN, FFS_BIN, SUBSYNC_WINDOW_S (240), SUBSYNC_LEAD_S (60), SUBSYNC_MAX_OFFSET_S (60),
+// SUBSYNC_FETCH_TIMEOUT_MS (30000)
 'use strict';
 
 const http = require('http');
@@ -23,6 +24,7 @@ const FFS = process.env.FFS_BIN || path.join(os.homedir(), '.local/share/stremio
 const WINDOW_S = parseInt(process.env.SUBSYNC_WINDOW_S || '240', 10);
 const LEAD_S = parseInt(process.env.SUBSYNC_LEAD_S || '60', 10);
 const MAX_OFFSET_S = parseInt(process.env.SUBSYNC_MAX_OFFSET_S || '60', 10);
+const FETCH_TIMEOUT_MS = parseInt(process.env.SUBSYNC_FETCH_TIMEOUT_MS || '30000', 10);
 const AGREE_S = 0.3;
 const TIME = /(?:(\d+):)?(\d{1,2}):(\d{2})[,.](\d{1,3})/;
 const cache = new Map();
@@ -139,14 +141,19 @@ function offsetAt(line, at0) {
     return at0 - (at0 - line.intercept) / line.slope;
 }
 
+async function subtitleText(sub) {
+    // Download the subtitle, time-limited since jobs run one at a time and a download that never ends would stop them all
+    const resp = await fetch(sub, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+    if (!resp.ok) throw new Error(`subtitle download failed: ${resp.status}`);
+    return resp.text();
+}
+
 async function sync(media, sub, at) {
     // Align the subtitle cues of a window ending shortly after the playback position to the speech in it
     const started = Date.now();
     // Mostly behind the playhead: those bytes are cached on the server, so the cut is fast and downloads nothing new
     const winStart = Math.max(0, at + LEAD_S - WINDOW_S);
-    const resp = await fetch(sub);
-    if (!resp.ok) throw new Error(`subtitle download failed: ${resp.status}`);
-    const all = parseCues(await resp.text());
+    const all = parseCues(await subtitleText(sub));
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'subsync-'));
     try {
         const wav = path.join(dir, 'audio.wav');
