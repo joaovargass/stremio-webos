@@ -155,7 +155,9 @@
         "targetBufferS": 120,
         "learnTvSpeed": true,
         "startOnLanWhenHeavy": true,
-        "graceMs": 60000
+        "graceMs": 60000,
+        "prewarmNext": true,
+        "prewarmAfterMs": 15000
     },
     "sources": {
         "enabled": true,

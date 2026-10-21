@@ -19,6 +19,8 @@
     var busy = false;
     var rerouted = {};
     var lanLost = {};
+    var prepared = {};
+    var struggleSince = null;
     var learned = readTvRate();
     var learnedSavedAt = 0;
 
@@ -129,6 +131,23 @@
         return true;
     }
 
+    function prepareNext(video) {
+        // Start the next ranked source in the background at the playback position, once per video
+        var videoId = currentVideoId();
+        if (prepared[videoId] || !video.duration || !window.__stremioTweaks || !window.__stremioTweaks.prewarm) return;
+        prepared[videoId] = true;
+        var fraction = video.currentTime / video.duration;
+        Promise.all([rankedStreams(), currentStream()]).then(function (results) {
+            var ranked = results[0] || [];
+            var index = -1;
+            ranked.forEach(function (s, i) { if (index === -1 && sameStream(s, results[1])) index = i; });
+            var next = ranked[index + 1];
+            if (!next) return;
+            console.info('[doctor] preparing next source in the background', next.infoHash || next.url, Math.round(fraction * 100) + '%');
+            window.__stremioTweaks.prewarm(next, fraction);
+        });
+    }
+
     function navigate(hash, replace) {
         // Go through the app router so its own history, and with it the Back key, stays correct
         if (window.__stremioHistory) return window.__stremioHistory.navigate(hash, replace);
@@ -186,11 +205,12 @@
         rerouted[hash] = true;
         console.warn('[doctor] rerouting', hash, 'to', proxy.fallback, reason);
         toast('Usando o Mac para esta fonte (' + reason + ')', 6000);
-        fetch('/__tweaks/route?hash=' + hash + '&to=remote').then(function () {
+        fetch('/__tweaks/route?hash=' + hash + '&to=remote').then(function (r) { return r.json(); }).then(function (route) {
             stalledSince = null;
             loadingSince = null;
-            reloadInPlace(video);
-        });
+            // The proxy moved the running download to the Mac at the next byte; reload only when it could not
+            if (!route.seamless) reloadInPlace(video);
+        }).catch(function () { reloadInPlace(video); });
         return true;
     }
 
@@ -240,9 +260,15 @@
         var loading = video.readyState < 2 && video.currentTime < 0.5;
         loadingSince = loading ? loadingSince || now : null;
         stalledSince = playing && !loading && !video.seeking && !advancing && video.readyState < 3 ? stalledSince || now : null;
-        var slow = !!stats && needed > 0 && speed < needed * 0.9;
+        // Data the server already holds past the playhead counts as buffer: a finished file never downloads, yet is not slow
+        var serverAheadS = stats && stats.streamLen && video.duration ? (stats.streamProgress || 0) * video.duration - video.currentTime : 0;
+        state.serverAheadS = Math.max(0, serverAheadS);
+        var slow = !!stats && needed > 0 && speed < needed * 0.9 && serverAheadS < (config.targetBufferS || 120);
         var low = state.totalBufferS < (config.minBufferS || 10);
         describe(slow, low, needed, !!hash);
+        // While playback struggles, get the next ranked source ready at the same position so a switch starts at once
+        struggleSince = (slow && low) || stalledSince ? struggleSince || now : null;
+        if (config.prewarmNext !== false && struggleSince && now - struggleSince > (config.prewarmAfterMs || 15000)) prepareNext(video);
         // A short freeze only earns a hint, never an action; only the hint shown here is hidden here
         var stalledMs = stalledSince ? now - stalledSince : 0;
         var wantHint = stalledMs > 10000;
@@ -318,6 +344,7 @@
         lastTime = null;
         stalledSince = null;
         loadingSince = null;
+        struggleSince = null;
         calmUntil = 0;
         setTimeout(showFirstRunHint, 4000);
     }

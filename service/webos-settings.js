@@ -23,7 +23,8 @@
             ['doctor.enabled', 'Monitorar a reprodução'],
             ['doctor.autoSwitch', 'Trocar de fonte sozinho quando falha'],
             ['stallRetry.enabled', 'Retomar quando o torrent trava'],
-            ['hlsFallback.enabled', 'Converter áudio ou vídeo incompatível (Mac)']
+            ['hlsFallback.enabled', 'Converter áudio ou vídeo incompatível (Mac)'],
+            ['doctor.prewarmNext', 'Preparar a próxima fonte em segundo plano']
         ] },
         { title: 'Legendas', column: 1, items: [
             ['subtitles.enabled', 'Central de legendas'],
@@ -38,7 +39,7 @@
             ['servers.useLan', 'Usar o servidor do Mac quando a TV não der conta'],
             ['doctor.startOnLanWhenHeavy', 'Começar pelo Mac se a fonte for pesada para a TV']
         ] },
-        { title: 'Avisos', column: 1, items: [
+        { title: 'Avisos', column: 0, items: [
             ['sources.loadingHint', 'Dica "Demorando?" ao carregar'],
             ['hints.firstRunToast', 'Aviso de novidades']
         ] }

@@ -45,17 +45,26 @@
             .catch(function (err) { console.warn('[tweaks] server selection failed', err); });
     }
 
-    function prewarm(stream) {
-        // Start the recommended torrent and fetch its first bytes while the viewer reads the list
+    function prewarm(stream, fraction) {
+        // Start a torrent and fetch its bytes at a position (the start by default) so a later play begins at once
         var settings = config.prewarm || {};
         var base = config.servers && config.servers.coreUrl;
-        if (settings.enabled === false || !base || !stream || !stream.infoHash || prewarmed[stream.infoHash]) return;
-        prewarmed[stream.infoHash] = true;
+        var key = stream && stream.infoHash + '@' + Math.round((fraction || 0) * 100);
+        if (settings.enabled === false || !base || !stream || !stream.infoHash || prewarmed[key]) return;
+        prewarmed[key] = true;
         var url = base.replace(/\/$/, '') + '/' + stream.infoHash + '/' + (stream.fileIdx || 0);
+        var bytes = settings.warmBytes || 1048576;
         boostTorrent(url).then(function () {
-            return fetch(url, { headers: { Range: 'bytes=0-' + ((settings.warmBytes || 1048576) - 1) } });
+            // A position inside the file needs its size first; a one-byte read answers with it
+            if (!fraction) return 0;
+            return fetch(url, { headers: { Range: 'bytes=0-0' } }).then(function (resp) {
+                var total = /\/(\d+)$/.exec(resp.headers.get('Content-Range') || '');
+                return total ? Math.floor(parseInt(total[1], 10) * fraction) : 0;
+            });
+        }).then(function (from) {
+            return fetch(url, { headers: { Range: 'bytes=' + from + '-' + (from + bytes - 1) } });
         }).then(function (resp) {
-            console.info('[tweaks] prewarmed', stream.infoHash, resp.status);
+            console.info('[tweaks] prewarmed', stream.infoHash, 'at', Math.round((fraction || 0) * 100) + '%', resp.status);
             return resp.arrayBuffer();
         }).catch(function (err) { console.warn('[tweaks] prewarm failed', err); });
     }
@@ -282,5 +291,5 @@
         syncServer(core);
     });
 
-    window.__stremioTweaks = { scoreStream: scoreStream, rankMetaDetails: rankMetaDetails, summary: summary };
+    window.__stremioTweaks = { scoreStream: scoreStream, rankMetaDetails: rankMetaDetails, summary: summary, prewarm: prewarm };
 })();
