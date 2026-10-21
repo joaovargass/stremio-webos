@@ -316,7 +316,12 @@ function fetchFile(target, redirects, done) {
         res.on('end', function() { finish(Buffer.concat(parts)); });
         res.on('error', function() { finish(null); });
     });
-    req.setTimeout(settings.convertTimeoutMs || 20000, function() { req.destroy(); });
+    // A total deadline: a socket timeout alone misses a DNS lookup or a connection that never opens
+    var deadline = setTimeout(function() {
+        req.destroy();
+        finish(null);
+    }, settings.convertTimeoutMs || 20000);
+    req.on('close', function() { clearTimeout(deadline); });
     req.on('error', function() { finish(null); });
 }
 
