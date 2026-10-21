@@ -242,6 +242,7 @@
         "netflixStyle": true,
         "autoSync": true,
         "syncEverySlotS": 600,
+        "syncTimeoutMs": 600000,
         "syncMinOffsetMs": 300,
         "syncAfterPlayingS": 20,
         "syncMinConfidence": 0.5,
