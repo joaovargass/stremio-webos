@@ -10,7 +10,7 @@
     var hints = (window.STREMIO_TWEAKS || {}).hints || {};
     var TORRENT_URL = /^(https?:\/\/[^/]+)\/([0-9a-f]{40})\/(\d+)/i;
     var HINT_KEY = 'twk.hint.v2';
-    var state = { status: 'ok', reason: '', totalBufferS: 0, playerBufferS: 0, ramBufferS: 0, speed: 0, needed: 0, switches: {}, exhausted: {} };
+    var state = { status: 'ok', reason: '', totalBufferS: 0, playerBufferS: 0, ramBufferS: 0, speed: 0, needed: 0, switches: {}, exhausted: {}, tried: {}, started: {} };
     var stalledSince = null;
     var calmUntil = 0;
     var hintShown = false;
@@ -96,13 +96,40 @@
         return Promise.resolve(window.__stremioRankedStreams || []);
     }
 
+    function candidates(ranked, current, count) {
+        // The next ranked streams after the current one, skipping the ones this video already tried
+        var videoId = currentVideoId();
+        var tried = state.tried[videoId] || [];
+        var index = -1;
+        ranked.forEach(function (s, i) { if (index === -1 && sameStream(s, current)) index = i; });
+        return ranked.slice(index + 1).filter(function (s) {
+            return !sameStream(s, current) && !tried.some(function (t) { return sameStream(s, t); });
+        }).slice(0, count);
+    }
+
+    function pickLive(list) {
+        // Among prepared torrents, the one really downloading wins; direct links need no swarm; unknown keeps ranked order
+        return Promise.all(list.map(function (s) {
+            if (!s.infoHash) return Promise.resolve(Infinity);
+            return fetchJson('/' + s.infoHash + '/' + (s.fileIdx || 0) + '/stats.json').then(function (st) {
+                return st ? (st.downloadSpeed || 0) + (st.unchoked || 0) : 0;
+            });
+        })).then(function (scores) {
+            var best = 0;
+            scores.forEach(function (score, i) { if (score > scores[best]) best = i; });
+            return list[best] || null;
+        });
+    }
+
     function nextSource(reason, automatic) {
-        // Move to the stream ranked right after the current one
+        // Move to the best next source: the live one among those prepared in the background, else the next ranked
         var videoId = currentVideoId();
         if (automatic) {
             var used = state.switches[videoId] || 0;
+            // Before the first picture a switch disturbs nothing, so more attempts are allowed than during playback
+            var budget = state.started[videoId] ? (config.maxAutoSwitches || 0) : (config.maxStartSwitches || config.maxAutoSwitches || 0);
             if (!config.autoSwitch) return false;
-            if (used >= (config.maxAutoSwitches || 0)) {
+            if (used >= budget) {
                 // Out of automatic attempts: tell the viewer once what can still help
                 if (!state.exhausted[videoId]) {
                     state.exhausted[videoId] = true;
@@ -116,35 +143,32 @@
             state.switches[videoId] = used + 1;
         }
         Promise.all([rankedStreams(), currentStream()]).then(function (results) {
-            var ranked = results[0] || [];
             var current = results[1];
-            var index = -1;
-            ranked.forEach(function (s, i) { if (index === -1 && sameStream(s, current)) index = i; });
-            var next = ranked[index + 1] || null;
-            if (!next) {
+            var list = candidates(results[0] || [], current, automatic && prepared[videoId] ? (config.raceCandidates || 2) : 1);
+            if (!list.length) {
                 toast('Não há outra fonte disponível para este título', 5000);
-                return;
+                return null;
             }
-            console.warn('[doctor] next source', automatic ? 'auto' : 'manual', reason);
-            playStream(next, (automatic ? 'Fonte instável (' + reason + '). ' : '') + 'Trocando para: ');
+            state.tried[videoId] = (state.tried[videoId] || []).concat(current ? [current] : []);
+            return (list.length > 1 ? pickLive(list) : Promise.resolve(list[0])).then(function (next) {
+                console.warn('[doctor] next source', automatic ? 'auto' : 'manual', reason, next.infoHash || next.url);
+                playStream(next, (automatic ? 'Fonte instável (' + reason + '). ' : '') + 'Trocando para: ');
+            });
         });
         return true;
     }
 
     function prepareNext(video) {
-        // Start the next ranked source in the background at the playback position, once per video
+        // Start the next ranked sources in the background at the playback position (the start while loading), once per video
         var videoId = currentVideoId();
-        if (prepared[videoId] || !video.duration || !window.__stremioTweaks || !window.__stremioTweaks.prewarm) return;
+        if (prepared[videoId] || !window.__stremioTweaks || !window.__stremioTweaks.prewarm) return;
         prepared[videoId] = true;
-        var fraction = video.currentTime / video.duration;
+        var fraction = video.duration ? video.currentTime / video.duration : 0;
         Promise.all([rankedStreams(), currentStream()]).then(function (results) {
-            var ranked = results[0] || [];
-            var index = -1;
-            ranked.forEach(function (s, i) { if (index === -1 && sameStream(s, results[1])) index = i; });
-            var next = ranked[index + 1];
-            if (!next) return;
-            console.info('[doctor] preparing next source in the background', next.infoHash || next.url, Math.round(fraction * 100) + '%');
-            window.__stremioTweaks.prewarm(next, fraction);
+            candidates(results[0] || [], results[1], config.raceCandidates || 2).forEach(function (next) {
+                console.info('[doctor] preparing a source in the background', next.infoHash || next.url, Math.round(fraction * 100) + '%');
+                window.__stremioTweaks.prewarm(next, fraction);
+            });
         });
     }
 
@@ -250,6 +274,8 @@
         state.speed = speed;
         state.needed = needed;
         var playing = !video.paused && !video.ended;
+        // Once a picture has played, switches become rare: the viewer is watching
+        if (video.currentTime > 1 && video.readyState >= 3) state.started[currentVideoId()] = true;
         var onTv = !!proxy && /^https?:\/\/(127\.|localhost)/.test(proxy.upstream) && !(proxy.routes || {})[hash];
         // Only a hungry player shows what the TV server can deliver
         if (config.learnTvSpeed !== false && onTv && hash && playing && speed > 0 && state.playerBufferS < 20) learnTvRate(speed);
@@ -267,7 +293,7 @@
         var low = state.totalBufferS < (config.minBufferS || 10);
         describe(slow, low, needed, !!hash);
         // While playback struggles, get the next ranked source ready at the same position so a switch starts at once
-        struggleSince = (slow && low) || stalledSince ? struggleSince || now : null;
+        struggleSince = (slow && low) || stalledSince || loadingSince ? struggleSince || now : null;
         if (config.prewarmNext !== false && struggleSince && now - struggleSince > (config.prewarmAfterMs || 15000)) prepareNext(video);
         // A short freeze only earns a hint, never an action; only the hint shown here is hidden here
         var stalledMs = stalledSince ? now - stalledSince : 0;
