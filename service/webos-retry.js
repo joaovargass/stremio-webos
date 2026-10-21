@@ -174,6 +174,18 @@
     window.__stremioRetryState = state;
     window.__stremioToast = { show: showOverlay, hide: hideOverlay };
 
+    window.__stremioConvert = function (video, message) {
+        // Convert the playing source to HLS on the server, for a picture that froze although its data is already there
+        var src = video.getAttribute('src');
+        if (!hlsConfig.enabled || !src || src === state.hlsUrl) return false;
+        if (state.url !== src) {
+            state.url = src;
+            state.retries = 0;
+        }
+        switchToHls(video, { url: src }, video.__lastTime || video.currentTime || 0, message);
+        return true;
+    };
+
     window.__stremioStallRetry = function (video, stream) {
         if (!stream || typeof stream.url !== 'string') return false;
         // Reset the budget when a different stream starts failing

@@ -26,7 +26,8 @@
             ['stallRetry.enabled', 'Retomar quando o torrent trava'],
             ['hlsFallback.enabled', 'Converter áudio ou vídeo incompatível (Mac)'],
             ['doctor.prewarmNext', 'Preparar a próxima fonte em segundo plano'],
-            ['doctor.prewarmOnLan', 'Preparar no Mac quando ele já estiver em uso']
+            ['doctor.prewarmOnLan', 'Preparar no Mac quando ele já estiver em uso'],
+            ['doctor.convertFrozen', 'Converter no Mac quando a imagem trava com dados prontos']
         ] },
         { title: 'Legendas', column: 1, items: [
             ['subtitles.enabled', 'Central de legendas'],

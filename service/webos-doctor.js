@@ -22,6 +22,7 @@
     var prepared = {};
     var prerouted = {};
     var announced = {};
+    var converted = {};
     var lastProxy = null;
     var lastHash = null;
     var struggleSince = null;
@@ -360,10 +361,25 @@
             useRemoteServer(video, hash, proxy, 'acima da velocidade da TV');
         } else if (loadingSince && (waitedMs > (config.startTimeoutMs || 60000) || (waitedMs > (config.quickStartMs || 20000) && race.best && race.videoId === currentVideoId()))) {
             remedy(video, hash, proxy, 'não começou');
+        } else if (frozenWithData(video, hash, proxy, stalledMs)) {
+            // The data is on the server yet the picture does not move: the TV cannot decode this file, a remux on the Mac can
+            converted[hash] = true;
+            calmUntil = now + calmFor();
+            state.status = 'trocando';
+            state.reason = 'imagem parada com dados prontos';
+            console.warn('[doctor] frozen with data on the server, converting', hash);
+            window.__stremioConvert(video, 'A TV não conseguiu decodificar este trecho, convertendo no Mac...');
         } else if (stalledMs > (config.stalledForMs || 45000) || choppy) {
             progress = [];
             remedy(video, hash, proxy, choppy ? 'vídeo travando' : 'vídeo travado');
         }
+    }
+
+    function frozenWithData(video, hash, proxy, stalledMs) {
+        // A freeze is a decoding problem when the server already holds plenty past the playhead and a converter exists
+        return config.convertFrozen !== false && !!hash && !converted[hash] && !!proxy && !!proxy.transcoder &&
+            stalledMs > (config.convertFrozenMs || 10000) && state.serverAheadS >= (config.convertMinServerAheadS || 30) &&
+            !/\/hlsv2\//.test(video.currentSrc || video.src || '');
     }
 
     function isChoppy(video, now, watching) {

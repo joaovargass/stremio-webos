@@ -176,7 +176,10 @@
         "graceMs": 60000,
         "prewarmNext": true,
         "prewarmOnLan": true,
-        "prewarmAfterMs": 15000
+        "prewarmAfterMs": 15000,
+        "convertFrozen": true,
+        "convertFrozenMs": 10000,
+        "convertMinServerAheadS": 30
     },
     "sources": {
         "enabled": true,
