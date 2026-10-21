@@ -106,6 +106,12 @@
         return Object.assign({}, track, { label: name + ' · ' + (track.origin || 'Addon') + synced });
     }
 
+    function throughConverter(track) {
+        // Every external subtitle is read by the TV converter, which also serves videos that play without the streaming server
+        if (config.convert === false || /\/subtitles\.vtt\?/.test(track.url)) return track;
+        return Object.assign({}, track, { url: location.origin + '/subtitles.vtt?from=' + encodeURIComponent(track.url) });
+    }
+
     function videoKey(player) {
         // Identify the playing video so lookups are cached per item
         var path = player && player.selected && player.selected.subtitlesPath;
@@ -166,7 +172,12 @@
         merged.sort(function (a, b) {
             return rank(a.lang, native) - rank(b.lang, native) || scoreOf(b) - scoreOf(a) || a.__order - b.__order;
         });
-        return Object.assign({}, state, { subtitles: (simple.enabled ? bestPerLanguage(merged) : merged).map(prettify) });
+        var selected = state.selected;
+        // Subtitles that come with the stream itself go through the converter as well
+        if (selected && selected.stream && Array.isArray(selected.stream.subtitles)) {
+            selected = Object.assign({}, selected, { stream: Object.assign({}, selected.stream, { subtitles: selected.stream.subtitles.map(throughConverter) }) });
+        }
+        return Object.assign({}, state, { selected: selected, subtitles: (simple.enabled ? bestPerLanguage(merged) : merged).map(prettify).map(throughConverter) });
     }
 
     function bestPerLanguage(tracks) {

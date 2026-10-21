@@ -361,6 +361,8 @@ function convertSubtitles(targets, done) {
 function serveSubtitles(req, res) {
     // Convert an external subtitle to clean WebVTT on the TV, keeping the last few for player reloads
     var from = String(url.parse(req.url, true).query.from || '');
+    // A track the page already pointed at this converter is read from its original address once
+    while (/^http:\/\/(127\.0\.0\.1|localhost):8080\/subtitles\.vtt\?/.test(from)) from = String(url.parse(from, true).query.from || '');
     if (!/^https?:\/\//i.test(from)) {
         res.writeHead(400);
         return res.end();
