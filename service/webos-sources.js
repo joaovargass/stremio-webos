@@ -182,6 +182,64 @@
         }, config.loadingHintAfterMs || 6000);
     }
 
+    var restart = (window.STREMIO_TWEAKS || {}).restart || {};
+    var resumeShown = {};
+
+    function notice(text) {
+        // Short notice in the shared toast
+        if (!window.__stremioToast) return;
+        window.__stremioToast.show(text);
+        clearTimeout(notice.timer);
+        notice.timer = setTimeout(window.__stremioToast.hide, 6000);
+    }
+
+    function clock(seconds) {
+        // Format seconds as h:mm:ss or m:ss
+        var s = Math.floor(seconds);
+        var h = Math.floor(s / 3600);
+        var m = Math.floor(s % 3600 / 60);
+        return (h ? h + ':' + (m < 10 ? '0' : '') : '') + m + ':' + (s % 60 < 10 ? '0' : '') + (s % 60);
+    }
+
+    function restartFromStart() {
+        // On the player jump to the start; on the title page clear the saved progress and play the best source from the start
+        var hash = location.hash || '';
+        if (hash.indexOf('#/player') === 0) {
+            var video = document.querySelector('video');
+            if (!video) return;
+            video.currentTime = 0;
+            notice('Recomeçando do início');
+            return;
+        }
+        var best = (window.__stremioRankedStreams || [])[0];
+        var metaId = decodeURIComponent(hash.split('/')[3] || '');
+        if (hash.indexOf('#/detail') !== 0 || !best || !metaId || !window.core) return;
+        notice('Recomeçando do início');
+        Promise.resolve(window.core.dispatch({ action: 'Ctx', args: { action: 'RewindLibraryItem', args: metaId } }, 'ctx')).catch(function () {}).then(function () {
+            if (window.__stremioDoctor) window.__stremioDoctor.navigate(best.deepLinks.player.replace(/^#/, ''));
+        });
+    }
+
+    function onResume(e) {
+        // A video that resumes far from its start tells once how to start over
+        var video = e.target;
+        if (!(video instanceof HTMLMediaElement) || !onPlayer() || restart.resumeHint === false) return;
+        var key = video.getAttribute('src');
+        if (resumeShown[key]) return;
+        resumeShown[key] = true;
+        if (video.currentTime > 30) notice('Retomando de ' + clock(video.currentTime) + ' · botão azul: recomeçar');
+    }
+
+    if (restart.enabled !== false) {
+        window.addEventListener('keydown', function (e) {
+            if (e.keyCode !== restart.hotkey || open) return;
+            e.preventDefault();
+            e.stopPropagation();
+            restartFromStart();
+        }, true);
+        document.addEventListener('playing', onResume, true);
+    }
+
     if (!config.enabled) {
         window.__stremioSources = { toggle: function () { if (window.__stremioDoctor) window.__stremioDoctor.nextSource('manual', false); }, hint: function () {} };
         return;

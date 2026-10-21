@@ -11,7 +11,8 @@
     var GROUPS = [
         { title: 'Modo simples', column: 0, items: [
             ['simple.enabled', 'Um botão Assistir, sem lista de addons'],
-            ['simple.quality', 'Qualidade preferida', ['best', '2160p', '1080p', '720p'], QUALITY_LABELS]
+            ['simple.quality', 'Qualidade preferida', ['best', '2160p', '1080p', '720p'], QUALITY_LABELS],
+            ['restart.enabled', 'Botão azul recomeça do início']
         ] },
         { title: 'Fontes', column: 0, items: [
             ['ranking.enabled', 'Ordenar fontes e marcar a recomendada'],
@@ -41,6 +42,7 @@
         ] },
         { title: 'Avisos', column: 0, items: [
             ['sources.loadingHint', 'Dica "Demorando?" ao carregar'],
+            ['restart.resumeHint', 'Aviso "Retomando de..."'],
             ['hints.firstRunToast', 'Aviso de novidades']
         ] }
     ];

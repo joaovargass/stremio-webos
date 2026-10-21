@@ -171,6 +171,11 @@
         "hintText": "Travou ou demorando? Botão verde: trocar fonte",
         "loadingHint": true
     },
+    "restart": {
+        "enabled": true,
+        "hotkey": 406,
+        "resumeHint": true
+    },
     "settings": {
         "hotkey": 405
     },

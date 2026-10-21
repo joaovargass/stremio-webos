@@ -9,7 +9,7 @@
     var config = (window.STREMIO_TWEAKS || {}).doctor || {};
     var hints = (window.STREMIO_TWEAKS || {}).hints || {};
     var TORRENT_URL = /^(https?:\/\/[^/]+)\/([0-9a-f]{40})\/(\d+)/i;
-    var HINT_KEY = 'twk.hint.v2';
+    var HINT_KEY = 'twk.hint.v3';
     var state = { status: 'ok', reason: '', totalBufferS: 0, playerBufferS: 0, ramBufferS: 0, speed: 0, needed: 0, switches: {}, exhausted: {}, tried: {}, started: {} };
     var stalledSince = null;
     var calmUntil = 0;
@@ -381,7 +381,7 @@
         } catch (_e) {
             return;
         }
-        toast('Teclas: verde troca a fonte · vermelho troca a legenda · amarelo abre os ajustes', 9000);
+        toast('Teclas: verde troca a fonte · vermelho troca a legenda · azul recomeça · amarelo abre os ajustes', 9000);
     }
 
     function onRouteChange() {
