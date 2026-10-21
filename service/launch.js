@@ -151,6 +151,14 @@ function probe(candidate, callback, timeoutMs) {
     req.on('error', function() { finish(false); });
 }
 
+function probeTwice(candidate, callback) {
+    // The first packet over an idle Wi-Fi link can take seconds; a second try right after runs on the woken link
+    probe(candidate, function(ok) {
+        if (ok) return callback(true);
+        probe(candidate, callback);
+    });
+}
+
 function recordProbe(candidate, ok) {
     // A server comes back on its first answer but goes down only after several failed probes in a row
     probeFailures[candidate] = ok ? 0 : (probeFailures[candidate] || 0) + 1;
@@ -164,7 +172,7 @@ function selectUpstream() {
     var targets = candidates.concat(transcoders.filter(function(t) { return candidates.indexOf(t) === -1; }));
     var pending = targets.length;
     targets.forEach(function(candidate) {
-        probe(candidate, function(ok) {
+        probeTwice(candidate, function(ok) {
             recordProbe(candidate, ok);
             if (--pending > 0) return;
             applyBestUpstream();
