@@ -9,6 +9,7 @@ FFMPEG_SHA256 = f4149bb2b0784e30e99bdda85471c9b5930d3402014e934a5098b41d0f7201b1
 TWEAKS = tweaks.json webos-ui.css webos-enhance.js webos-retry.js webos-subs.js webos-subsync.js webos-doctor.js webos-sources.js webos-settings.js webos-diag.js webos-debug.js
 VERSION = $(shell python3 -c "import json; print(json.load(open('app/appinfo.json'))['version'])")
 IPK = $(APP_ID)_$(VERSION)_all.ipk
+STAGE = /tmp/stremio-webos-package
 
 .PHONY: build package deploy launch restart clean ffmpeg
 
@@ -40,13 +41,16 @@ build: service/server.js
 	@rm -rf /tmp/stremio-vidaa-build
 	@for p in patches/*.patch; do \
 		echo "    Applying $$(basename $$p)..."; \
-		patch -p0 -d service/www < "$$p"; \
+		patch -p0 --no-backup-if-mismatch -d service/www < "$p"; \
 	done
 	@echo "==> Build complete"
 
+# Only the files the TV runs go into the package: no dotfiles, patch backups or files of the upstream repo tooling
 package: build
 	@rm -f $(IPK)
-	@ares-package --no-minify app service -o .
+	@rm -rf $(STAGE) && mkdir -p $(STAGE)
+	@rsync -a --exclude '.*' --exclude '*.orig' --exclude 'playwright.config.js' app service $(STAGE)/
+	@ares-package --no-minify $(STAGE)/app $(STAGE)/service -o .
 
 deploy: package
 	@for i in 1 2 3 4 5; do \
