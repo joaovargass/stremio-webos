@@ -634,11 +634,24 @@ function proxyToStreaming(req, res) {
     }
     if (STREAM_PATH.test(req.url)) trackStream(res);
     if (!HLS_PATH.test(req.url)) return proxyRequest(req, res, source, source);
+    traceRequest(req, res, 'hls');
     // HLS conversion needs ffmpeg; answer at once when no server can convert so the player moves on
     var transcoder = pickTranscoder(source);
     if (transcoder) return proxyRequest(req, res, transcoder, source);
     res.writeHead(503, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'no transcoder available' }));
+}
+
+function traceRequest(req, res, label) {
+    // Debug log of when a request got its answer and when it finished, to find where a start waits
+    var started = Date.now();
+    var headersAt = null;
+    var writeHead = res.writeHead;
+    res.writeHead = function() {
+        headersAt = Date.now() - started;
+        return writeHead.apply(res, arguments);
+    };
+    res.on('close', function() { console.log(label, req.url.split('?')[0].slice(0, 70), res.statusCode, 'answer', headersAt, 'ms, end', Date.now() - started, 'ms'); });
 }
 
 function trackStream(res) {
