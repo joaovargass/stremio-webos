@@ -684,6 +684,12 @@ function serveSubsync(req, res) {
     proxyRequest(req, res, target, source, req.url.replace('/__tweaks/subsync', '/sync'));
 }
 
+function serveDeviceInfo(res) {
+    // The bundled server answers this by test-encoding with every desktop GPU profile, failing each time on a TV; a TV has none
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ availableHardwareAccelerations: false }));
+}
+
 function serveStatus(res) {
     // Report the selected upstream for the diagnostics panel
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -700,6 +706,7 @@ http.createServer(function(req, res) {
     if (urlPath === '/__tweaks/warm') return serveWarm(req.url, res);
     if (urlPath === '/__tweaks/mirror') return serveMirror(req.url, res);
     if (urlPath === '/__tweaks/logs') return serveLogs(req.url, res);
+    if (urlPath === '/device-info' && isLocal(sourceFor(req.url))) return serveDeviceInfo(res);
     if (urlPath === '/subtitles.vtt' && (tweaks.subtitles || {}).convert !== false) return serveSubtitles(req, res);
     if (urlPath === '/__tweaks/subsync') return serveSubsync(req, res);
     if (urlPath === '/__tweaks/overrides' && req.method === 'POST') return serveOverrides(req, res);
