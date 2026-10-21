@@ -9,7 +9,9 @@
 // Env: DISCOVERY_PORT (11479), DISCOVERY_GROUP6 (ff02::114), STREMIO_PORT (11480), SUBSYNC_PORT (11481)
 'use strict';
 
+const { execFileSync } = require('child_process');
 const dgram = require('dgram');
+const { isIP } = require('net');
 const os = require('os');
 
 const PORT = parseInt(process.env.DISCOVERY_PORT || '11479', 10);
@@ -17,10 +19,25 @@ const GROUP6 = process.env.DISCOVERY_GROUP6 || 'ff02::114';
 const SERVER_PORT = parseInt(process.env.STREMIO_PORT || '11480', 10);
 const SUBSYNC_PORT = parseInt(process.env.SUBSYNC_PORT || '11481', 10);
 const QUERY = 'stremio-lan?';
+const NAME = computerName();
 
 function log(...args) {
     // Timestamped lines for the service log
     console.log(new Date().toISOString(), ...args);
+}
+
+function computerName() {
+    // macOS keeps the name people gave the computer apart from the host name, which DHCP can set to a bare address
+    let name = os.hostname();
+    if (process.platform === 'darwin') {
+        try {
+            name = execFileSync('scutil', ['--get', 'ComputerName'], { encoding: 'utf8', timeout: 2000 }).trim() || name;
+        } catch (err) {
+            log('computer name not read', err.message);
+        }
+    }
+    // An address says nothing the TV does not already know, so the answer carries no name then
+    return isIP(name) ? '' : name.replace(/\.local$/, '');
 }
 
 function reachableAddresses() {
@@ -39,7 +56,7 @@ function reachableAddresses() {
 function answer(socket, message, rinfo) {
     // Reply to a query only, straight to the asking TV
     if (message.toString('utf8') !== QUERY) return;
-    const body = JSON.stringify({ service: 'stremio-lan', version: 1, name: os.hostname(), port: SERVER_PORT, subsyncPort: SUBSYNC_PORT, addresses: reachableAddresses() });
+    const body = JSON.stringify({ service: 'stremio-lan', version: 1, name: NAME, port: SERVER_PORT, subsyncPort: SUBSYNC_PORT, addresses: reachableAddresses() });
     socket.send(body, rinfo.port, rinfo.address, (err) => {
         if (err) log('answer failed', rinfo.address, err.message);
     });

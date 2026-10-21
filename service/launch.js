@@ -718,7 +718,7 @@ function dropServer(server) {
 
 function adoptServer(found, info) {
     // Use the discovered server right after the TV, and as transcoder since it is the ffmpeg build
-    console.log('discovered LAN streaming server', found, info.name || '');
+    console.log('discovered LAN streaming server ' + found + (info.name ? ' on ' + info.name : ''));
     // Servers found earlier on another network or address are gone, so they leave the list instead of piling up
     Object.keys(discovered).forEach(function(old) { if (old !== found && !serverStatus[old]) dropServer(old); });
     discovered[found] = true;
