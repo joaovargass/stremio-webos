@@ -267,6 +267,12 @@
 .twk-settings {
     width: 70vw;
     right: 15vw;
+    /* Rows past the screen scroll: arrows keep the focused row in view, the Magic Remote wheel scrolls freely */
+    overflow-y: auto;
+}
+
+.twk-settings::-webkit-scrollbar {
+    width: 0;
 }
 
 .twk-set-row {
