@@ -159,11 +159,16 @@ async function sync(media, sub, at) {
             .map((c) => ({ start: c.start - winStart, end: c.end - winStart, text: c.text || '...' }));
         if (cues.length < 16) throw new Error(`too few cues in the window (${cues.length})`);
         const at0 = at - winStart;
-        // Two different cue sets must agree; regular speech patterns can otherwise lock onto a wrong shift
         const full = await align(dir, 'full', wav, cues);
-        const half = await align(dir, 'half', wav, cues.slice(Math.floor(cues.length / 2)));
+        // Two independent checks must agree: the second half of the cues against the second half of the audio only,
+        // since half of the cues against all of the audio fits anywhere in continuous speech
+        const halfS = audioS / 2;
+        const halfWav = path.join(dir, 'half.wav');
+        await run(FFMPEG, ['-nostdin', '-loglevel', 'error', '-ss', String(halfS), '-i', wav, '-c', 'copy', halfWav], 60000);
+        const halfCues = cues.filter((c) => c.start >= halfS).map((c) => ({ start: c.start - halfS, end: c.end - halfS, text: c.text }));
+        const half = await align(dir, 'half', halfWav, halfCues);
         const offset = offsetAt(full.line, at0);
-        const disagreement = Math.abs(offset - offsetAt(half.line, at0));
+        const disagreement = Math.abs(offset - offsetAt(half.line, at0 - halfS));
         const confidence = disagreement > AGREE_S ? 0 : full.score / Math.max(1, audioS * 100);
         return {
             offsetMs: Math.round(offset * 1000), scale: Number(full.line.slope.toFixed(5)), confidence: Number(confidence.toFixed(3)),
