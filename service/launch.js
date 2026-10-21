@@ -122,7 +122,8 @@ function serveRoute(reqUrl, res) {
         else delete routes[hash];
         // The open memory window continues from the new server at the next byte, so the player keeps playing untouched
         seamless = readAhead.reroute(hash, target ? url.parse(target) : upstream);
-        if (!seamless) readAhead.reset();
+        // Only this torrent's own window is dropped; a video playing from another file keeps its buffer
+        if (!seamless) readAhead.resetFor(hash);
         console.log('route', hash, '->', target || 'default', seamless ? '(seamless)' : '');
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });

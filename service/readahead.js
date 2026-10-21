@@ -68,10 +68,13 @@ ReadAhead.prototype.status = function() {
     };
 };
 
-ReadAhead.prototype.reset = function() {
-    // Drop the current window so the next request opens a fresh one
-    if (this.buffer) this.buffer.destroy();
+ReadAhead.prototype.resetFor = function(hash) {
+    // Drop the window of one torrent so its next request opens a fresh one; other files keep theirs
+    var b = this.buffer;
+    if (!b || b.path.toLowerCase().indexOf(hash) === -1) return false;
+    b.destroy();
     this.buffer = null;
+    return true;
 };
 
 ReadAhead.prototype.reroute = function(hash, upstream) {
