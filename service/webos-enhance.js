@@ -123,10 +123,10 @@
         return parseFloat(match[1]) * unit;
     }
 
-    function tvRate() {
-        // Learned download rate of the TV's own server, in bytes per second, once enough samples exist
+    function learnedRate(key) {
+        // Download rate the doctor learned for one server ('twk.tvRate', 'twk.lanRate'), in bytes per second, once enough samples exist
         try {
-            var saved = JSON.parse(localStorage.getItem('twk.tvRate') || 'null');
+            var saved = JSON.parse(localStorage.getItem(key) || 'null');
             return saved && saved.n >= 30 ? saved.rate : null;
         } catch (_e) {
             return null;
@@ -175,8 +175,10 @@
         // Preferred quality: a cap above which sources lose, and a bonus for the exact target
         if (ctx.targetRes && resolution > ctx.targetRes) score -= 150;
         if (ctx.targetRes && resolution === ctx.targetRes) score += 15;
-        var over = rank.overTvSpeed;
-        if (over && bitrate && ctx.tvRate && !ctx.lan && bitrate > ctx.tvRate * over.margin) {
+        // Heavier than what the server that would play it delivers: the Mac when available, else the TV
+        var over = ctx.lan ? rank.overLanSpeed : rank.overTvSpeed;
+        var limit = ctx.lan ? ctx.lanRate : ctx.tvRate;
+        if (over && bitrate && limit && bitrate > limit * over.margin) {
             score -= over.penalty;
             warnings.push(over.label);
         }
@@ -193,7 +195,8 @@
         var context = {
             targetRes: simple.quality && simple.quality !== 'best' ? parseInt(simple.quality, 10) : null,
             runtimeS: runtimeSeconds(meta && meta.runtime),
-            tvRate: tvRate(),
+            tvRate: learnedRate('twk.tvRate'),
+            lanRate: learnedRate('twk.lanRate'),
             lan: (config.servers || {}).useLan !== false && window.__stremioLanAvailable === true
         };
         var groups = state.streams.map(function (group) {

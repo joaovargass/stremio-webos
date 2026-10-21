@@ -116,6 +116,11 @@
             "margin": 0.9,
             "penalty": 40,
             "label": "acima da velocidade da TV"
+        },
+        "overLanSpeed": {
+            "margin": 0.9,
+            "penalty": 40,
+            "label": "acima da velocidade do Mac"
         }
     },
     "simple": {
