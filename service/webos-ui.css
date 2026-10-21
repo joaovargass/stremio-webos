@@ -101,6 +101,7 @@
 }
 
 .twk-section {
+    min-width: 0;
     padding: 1vh 0;
     border-top: 1px solid #2a2a2d;
 }
@@ -135,6 +136,10 @@
     white-space: nowrap;
 }
 
+.twk-value.twk-wrap {
+    white-space: normal;
+}
+
 .twk-bar {
     position: relative;
     height: 0.8vh;
@@ -161,7 +166,8 @@
 
 .twk-diag-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    /* minmax(0, 1fr): long unbreakable values shrink with an ellipsis instead of widening the column past the panel */
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     column-gap: 2vw;
     align-content: start;
     width: 60vw;

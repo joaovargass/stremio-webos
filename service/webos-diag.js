@@ -59,7 +59,8 @@
         // Update one value cell and its colour tone
         var node = fields[key];
         node.textContent = text;
-        node.className = 'twk-value' + (tone ? ' twk-' + tone : '');
+        // Sentences such as the doctor reason wrap instead of being cut
+        node.className = 'twk-value' + (key === 'reason' ? ' twk-wrap' : '') + (tone ? ' twk-' + tone : '');
     }
 
     function setBar(key, ratio, tone) {
@@ -113,18 +114,20 @@
         return fetch(target).then(function (resp) { return resp.json(); }).catch(function () { return null; });
     }
 
-    function renderServer(origin, proxy, src) {
-        // Fill the server section, resolving the proxy upstream
+    function renderServer(origin, proxy, src, hash) {
+        // Fill the server section with the server this video really comes from: its own route, else the proxy upstream
         if (!origin) {
             setText('server', src.split('?')[0].replace(/^https?:\/\//, '').slice(0, 60));
             ['version', 'limit', 'transcoder', 'candidates'].forEach(function (key) { setText(key, '-'); });
             return;
         }
-        var real = proxy && proxy.upstream ? proxy.upstream.replace(/\/$/, '') : origin;
-        loadServerInfo(real, origin);
+        var routed = proxy && hash && (proxy.routes || {})[hash];
+        var real = (routed || (proxy && proxy.upstream) || origin).replace(/\/$/, '');
+        // A routed LAN server is asked directly (it allows any origin); the upstream is asked through the proxy
+        loadServerInfo(real, routed ? real : origin);
         var info = serverInfo[real] || {};
         var local = /127\.0\.0\.1|localhost/.test(real);
-        setText('server', real.replace(/^https?:\/\//, '') + (local ? ' (TV)' : ' (rede local)'), local ? 'good' : 'warn');
+        setText('server', real.replace(/^https?:\/\//, '') + (local ? ' (TV)' : routed ? ' (Mac, só este vídeo)' : ' (rede local)'), local ? 'good' : 'warn');
         setText('version', info.version || '?');
         var cache = info.cache === 0 ? 'sem cache' : info.cache ? megabytes(info.cache) : '?';
         setText('limit', (info.limit ? mbps(info.limit) : '?') + ' / ' + cache);
@@ -145,10 +148,13 @@
         var needed = stats.streamLen && video.duration ? stats.streamLen / video.duration : 0;
         var margin = needed ? (stats.downloadSpeed || 0) / needed : 0;
         var tone = !needed ? null : margin >= 1.2 ? 'good' : margin >= 1 ? 'warn' : 'bad';
-        setText('peers', stats.peers + ' conectados · ' + stats.unchoked + ' enviando', stats.unchoked ? null : 'bad');
+        // A file the server already holds needs no peers and no speed
+        var complete = (stats.streamProgress || 0) >= 0.999;
+        setText('peers', stats.peers + ' conectados · ' + stats.unchoked + ' enviando', stats.unchoked || complete ? null : 'bad');
         setText('sources', ((stats.sources || []).length || 'DHT') + ' · ' + (stats.connectionTries || 0) + ' tentativas');
-        setText('speed', mbps(stats.downloadSpeed) + (needed ? '  (' + margin.toFixed(1) + '×)' : ''), tone);
-        setBar('speedBar', needed ? margin / 2 : 0, tone);
+        if (complete) setText('speed', 'arquivo completo no servidor', 'good');
+        else setText('speed', mbps(stats.downloadSpeed) + (needed ? '  (' + margin.toFixed(1) + '×)' : ''), tone);
+        setBar('speedBar', complete ? 1 : needed ? margin / 2 : 0, complete ? 'good' : tone);
         setText('needed', needed ? mbps(needed) : '?');
         setText('transfer', megabytes(stats.downloaded) + ' / ' + megabytes(stats.uploaded));
         setText('progress', ((stats.streamProgress || 0) * 100).toFixed(1) + '% de ' + megabytes(stats.streamLen));
@@ -214,7 +220,7 @@
         ]).then(function (results) {
             busy = false;
             renderHealth(video, results[1]);
-            renderServer(origin, origin && origin.indexOf(location.host) !== -1 ? results[1] : null, src);
+            renderServer(origin, origin && origin.indexOf(location.host) !== -1 ? results[1] : null, src, torrent ? torrent[2].toLowerCase() : null);
             if (torrent) renderTorrent(results[0], video);
             renderPlayback(video);
         });
