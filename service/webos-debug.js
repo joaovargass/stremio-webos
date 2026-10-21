@@ -77,11 +77,23 @@
     wrapConsole();
     // Every remote key, so a viewer can follow what a test presses
     window.addEventListener('keydown', function (e) { add('KEY', 'info', KEY_NAMES[e.keyCode] || 'tecla ' + e.keyCode); }, true);
+    var navCause = 'link';
+    ['pushState', 'replaceState'].forEach(function (name) {
+        // Each route change names how it happened and the code that asked for it, so an unexpected one can be traced
+        var original = history[name];
+        history[name] = function () {
+            var caller = (new Error().stack || '').split('\n').slice(2, 4).map(function (line) { return line.trim().replace(/^at /, '').replace(/https?:\/\/[^/]+\//, ''); }).join(' < ');
+            navCause = (name === 'pushState' ? 'push' : 'replace') + ' ' + caller;
+            return original.apply(this, arguments);
+        };
+    });
+    window.addEventListener('popstate', function () { navCause = 'back'; });
     window.addEventListener('historyChange', function () {
         // A route with a malformed escape is shown as it is
         var route = location.hash;
         try { route = decodeURIComponent(route); } catch (_e) {}
-        add('NAV', 'info', route.slice(0, 120));
+        add('NAV', 'info', route.slice(0, 60) + ' (' + navCause.slice(0, 90) + ')');
+        navCause = 'link';
     });
     window.addEventListener('error', function (e) { add('TV', 'error', e.message + ' @ ' + String(e.filename || '').split('/').pop() + ':' + e.lineno); });
     add('TV', 'info', 'debug log on');
