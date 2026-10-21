@@ -1,0 +1,12 @@
+--- main.js
++++ main.js
+@@ -11526,7 +11526,8 @@
+                             token: t
+                         }),
+                         logout: () => e.dispatchAction("Logout"),
+-                        syncUser: () => e.dispatchAction("PullUserFromAPI"),
++                        // The core reads this action with an arguments object, even an empty one
++                        syncUser: () => e.dispatchAction("PullUserFromAPI", {}),
+                         syncAddons: () => e.dispatchAction("PullAddonsFromAPI"),
+                         syncLibrary: () => e.dispatchAction("SyncLibraryWithAPI"),
+                         syncNotifications: () => e.dispatchAction("PullNotifications"),

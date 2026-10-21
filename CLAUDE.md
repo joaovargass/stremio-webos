@@ -137,6 +137,10 @@ Lets `window.__stremioPickSubtitles` choose the subtitle track before the player
 
 The WebOsVideo `loadedmetadata` handler seeks to the position the player opened with. A reload by the tweaks (stall retry, HLS conversion, LAN reroute) sets `A.__twkResumeMs` first, so the player resumes where playback was instead of jumping back to an old library position.
 
+### webos-sync-user-args.patch
+
+The start-up sync (`syncUser`, then add-ons, library and notifications) dispatched `PullUserFromAPI` without arguments; the bundled core rejects that action without an arguments object ("missing field `args`"), so the start-up promise failed ("Uncaught (in promise)") and the add-on, library and notification syncs after it never ran. The patch sends an empty arguments object.
+
 ### webos-tracks-retry.patch
 
 Longer timeout and retries for the streaming server `/tracks/` call, which lists embedded subtitles and can take 20+ s on a cold torrent.
