@@ -1,0 +1,16 @@
+--- main.js
++++ main.js
+@@ -1916,6 +1916,13 @@
+                 }, M = () => {
+                     s.navigate(y())
+                 };
++                // A short OK on a card opens the title (series: episodes, movie: play button); holding OK keeps this menu
++                (0, L.k9)(e.open, (opened => {
++                    opened && window.__twkCardPress && window.__twkCardPress((() => {
++                        const t = b(), n = t && (t.metaDetailsVideos || t.metaDetailsStreams);
++                        n && (e.onClose(), s.navigate(n))
++                    }))
++                }));
+                 return (0, L.k9)(e.open, (e => {
+                     if (s.setBackDisabled(e), e) {
+                         var t, n, r, o, i, a;
