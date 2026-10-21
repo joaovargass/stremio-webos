@@ -97,7 +97,8 @@
         // Fill the server section with the server this video really comes from: its own route, else the proxy upstream
         if (!origin) {
             setText('server', src.split('?')[0].replace(/^https?:\/\//, '').slice(0, 60));
-            ['version', 'limit', 'learned', 'transcoder', 'candidates'].forEach(function (key) { setText(key, '-'); });
+            setText('version', '-');
+            setText('limit', '-');
             return;
         }
         var routed = proxy && hash && (proxy.routes || {})[hash];
@@ -110,13 +111,17 @@
         setText('version', info.unavailable ? t('diag.unavailable') : info.version || '?');
         var cache = info.cache === 0 ? t('diag.noCache') : info.cache ? megabytes(info.cache) : '?';
         setText('limit', (info.limit ? mbps(info.limit) : '?') + ' / ' + cache);
+    }
+
+    function renderServers(status) {
+        // What every video can use, whatever plays now: learned speeds, the converter and the servers found
         setText('learned', learnedText());
-        var transcoder = proxy && proxy.transcoder;
-        // The TV converts with its own ffmpeg; a LAN server only takes over to go faster
+        var transcoder = status && status.transcoder;
+        // The TV converts with its own ffmpeg; a computer only takes over to go faster
         var tvConverts = transcoder && /127\.0\.0\.1|localhost/.test(transcoder);
-        setText('transcoder', transcoder ? transcoder.replace(/^https?:\/\//, '').replace(/\/$/, '') + ' ' + t(tvConverts ? 'diag.server.tv' : 'diag.server.computerVideo') : t('diag.unavailable'), transcoder ? 'good' : 'warn');
-        var candidates = proxy && proxy.candidates ? Object.keys(proxy.candidates).map(function (key) {
-            return key.replace(/^https?:\/\//, '').replace(/\/$/, '') + (proxy.candidates[key] ? ' ✓' : ' ✕');
+        setText('transcoder', transcoder ? transcoder.replace(/^https?:\/\//, '').replace(/\/$/, '') + ' ' + t(tvConverts ? 'diag.server.tv' : 'diag.server.computer') : t('diag.unavailable'), transcoder ? 'good' : 'warn');
+        var candidates = status && status.candidates ? Object.keys(status.candidates).map(function (key) {
+            return key.replace(/^https?:\/\//, '').replace(/\/$/, '') + (status.candidates[key] ? ' ✓' : ' ✕');
         }).join('  ') : '-';
         setText('candidates', candidates);
     }
@@ -207,6 +212,7 @@
             busy = false;
             renderHealth(video, results[1]);
             renderServer(origin, origin && origin.indexOf(location.host) !== -1 ? results[1] : null, src, torrent ? torrent[2].toLowerCase() : null);
+            renderServers(results[1]);
             if (torrent) renderTorrent(results[0], video);
             renderPlayback(video);
         });
