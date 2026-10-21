@@ -9,7 +9,7 @@
         'pt-br': ['pob', 'pt-br', 'pt_br', 'ptbr', 'pb', 'brazilian', 'portuguese (brazil)', 'português (brasil)'],
         pt: ['por', 'pt', 'pt-pt', 'portuguese', 'português']
     };
-    var ISO3_TO_2 = { eng: 'en', spa: 'es', fre: 'fr', fra: 'fr', ger: 'de', deu: 'de', ita: 'it', jpn: 'ja', kor: 'ko', chi: 'zh', zho: 'zh', rus: 'ru', ara: 'ar', hin: 'hi', tur: 'tr', pol: 'pl', dut: 'nl', nld: 'nl', swe: 'sv' };
+    var ISO3_TO_2 = { eng: 'en', spa: 'es', spl: 'es', spn: 'es', fre: 'fr', fra: 'fr', ger: 'de', deu: 'de', ita: 'it', jpn: 'ja', kor: 'ko', chi: 'zh', zho: 'zh', rus: 'ru', ara: 'ar', hin: 'hi', tur: 'tr', pol: 'pl', dut: 'nl', nld: 'nl', swe: 'sv' };
     var LABELS = { 'pt-br': 'Português (BR)', pt: 'Português', en: 'English', es: 'Español', fr: 'Français', de: 'Deutsch', it: 'Italiano', ja: '日本語', ko: '한국어' };
     var RELEASE_TAGS = ['web', 'webdl', 'webrip', 'bluray', 'brrip', 'bdrip', 'hdtv', 'dvdrip', 'remux', '720p', '1080p', '2160p', 'amzn', 'nf', 'dsnp', 'hmax', 'atvp', 'hulu', 'ip'];
     var extraCache = {};
@@ -236,7 +236,14 @@
         var embedded = (state.subtitlesTracks || []).slice().sort(function (a, b) {
             return isSdh(a) - isSdh(b) || rank(a.lang, native) - rank(b.lang, native);
         }).map(function (t) { return { id: t.id, kind: 'embedded', label: (LABELS[baseLang(t.lang)] || t.lang) + ' · embutida' + (isSdh(t) ? ' (SDH)' : '') }; });
-        var extra = (state.extraSubtitlesTracks || []).map(function (t) { return { id: t.id, kind: 'extra', label: t.label || t.lang }; });
+        // The player lists addon and OpenSubtitles copies side by side; simple mode keeps one external track per language
+        var langs = {};
+        var extra = (state.extraSubtitlesTracks || []).filter(function (t) {
+            var lang = baseLang(t.lang);
+            if (simple.enabled && langs[lang]) return false;
+            langs[lang] = true;
+            return true;
+        }).map(function (t) { return { id: t.id, kind: 'extra', label: (LABELS[baseLang(t.lang)] || t.lang) + ' · externa' }; });
         return embedded.concat(extra).concat([{ id: null, kind: 'off', label: 'desligada' }]);
     }
 
