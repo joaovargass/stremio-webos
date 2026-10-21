@@ -15,6 +15,7 @@
     var extraCache = {};
     var pending = {};
     var firstPickAt = {};
+    var lastAudio = [];
     var syncScores = {};
     var profile = { audio: null, subs: [], autoSelect: true };
 
@@ -204,11 +205,15 @@
         if (!config.enabled || !config.autoPick || !profile.autoSelect) return null;
         var native = nativeLang(audioTracks);
         window.__stremioNativeLang = native;
+        lastAudio = audioTracks || lastAudio;
         // The subtitle languages set in Stremio first (embedded, then external), then the configured order
         var priority = profile.subs.reduce(function (list, lang) { return list.concat(['embedded:' + lang, 'external:' + lang]); }, []).concat(config.priority || []);
         // Embedded tracks arrive late; external ones may only win once the wait window is over
         var stream = location.hash;
-        firstPickAt[stream] = firstPickAt[stream] || Date.now();
+        if (!firstPickAt[stream]) {
+            firstPickAt[stream] = Date.now();
+            pickLate(stream);
+        }
         var embeddedOnly = Date.now() - firstPickAt[stream] < (config.embeddedWaitMs || 0);
         for (var i = 0; i < priority.length; i++) {
             var parts = priority[i].split(':');
@@ -224,6 +229,19 @@
         }
         return null;
     };
+
+    function pickLate(stream) {
+        // The player asks again only when its track lists change, so an external track gets its turn when the embedded wait ends
+        setTimeout(function () {
+            if (location.hash !== stream || window.__stremioSubPick || !window.__stremioPlayerVideo || !window.core) return;
+            window.core.getState('player').then(function (state) {
+                // A choice the viewer saved for this stream is never overridden
+                if (!state || (state.streamState && state.streamState.subtitleTrack) || location.hash !== stream || window.__stremioSubPick) return;
+                var pick = window.__stremioPickSubtitles([], state.subtitles || [], lastAudio);
+                if (pick && pick.extra) window.__stremioPlayerVideo.selectExtraSubtitlesTrack(pick.extra);
+            }).catch(function () {});
+        }, (config.embeddedWaitMs || 0) + 500);
+    }
 
     function whenCoreReady(callback) {
         // The core bridge is created asynchronously by main.js
