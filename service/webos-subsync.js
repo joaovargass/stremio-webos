@@ -1,0 +1,106 @@
+// Automatic subtitle sync: while an external subtitle is showing and the video plays,
+// asks the LAN sync service (through the proxy) how far the cues are from the voices
+// around the playback position and applies that delay through the player, the same way
+// the manual delay control does. Release-matched subtitles are skipped, a delay the
+// viewer set by hand is never overridden, and every ten-minute slot is checked once to
+// catch drift. Parameters come from STREMIO_TWEAKS.subtitles.
+(function () {
+    var config = (window.STREMIO_TWEAKS || {}).subtitles || {};
+    var done = {};
+    var lastApplied = null;
+    var playingSince = null;
+    var busy = false;
+    var warnedUnavailable = false;
+
+    function toast(text, hideAfterMs) {
+        // Reuse the recovery toast so every notice looks the same
+        if (!window.__stremioToast) return;
+        window.__stremioToast.show(text);
+        setTimeout(window.__stremioToast.hide, hideAfterMs);
+    }
+
+    function playerState() {
+        // Current props of the player video, exposed by the player patch
+        var video = window.__stremioPlayerVideo;
+        if (!video || !video.state) return null;
+        return typeof video.state === 'function' ? video.state() : video.state;
+    }
+
+    function selectedTrack(state) {
+        // The external subtitle track currently shown, if any
+        var id = state && state.selectedExtraSubtitlesTrackId;
+        if (!id) return null;
+        return (state.extraSubtitlesTracks || []).filter(function (t) { return t.id === id; })[0] || null;
+    }
+
+    function formatSeconds(ms) {
+        // Signed seconds with one decimal, as shown in the toast
+        return (ms > 0 ? '+' : '') + (ms / 1000).toFixed(1).replace('.', ',') + ' s';
+    }
+
+    function apply(result, track) {
+        // Set the delay only when the subtitle really matches the speech and the shift is large enough to matter
+        if (!(result.confidence >= (config.syncMinConfidence || 0.5))) {
+            console.warn('[subsync] low confidence result ignored', JSON.stringify(result));
+            return;
+        }
+        if (Math.abs(result.offsetMs) < (config.syncMinOffsetMs || 300)) {
+            console.info('[subsync] already in sync', result.offsetMs, 'ms');
+            return;
+        }
+        lastApplied = result.offsetMs;
+        window.__stremioSetSubtitlesDelay(result.offsetMs);
+        window.__stremioSubSync = { offsetMs: result.offsetMs, track: track.id, at: Date.now() };
+        console.info('[subsync] applied', result.offsetMs, 'ms to', track.id);
+        toast('Legenda sincronizada pelo Mac (' + formatSeconds(result.offsetMs) + ')', 4000);
+    }
+
+    function check() {
+        // Run at most one measurement at a time, only on the player with an external subtitle
+        if (busy || config.autoSync === false || (location.hash || '').indexOf('#/player') !== 0 || !window.__stremioSetSubtitlesDelay) return;
+        var video = document.querySelector('video');
+        var state = playerState();
+        var track = selectedTrack(state);
+        var playing = video && !video.paused && video.readyState >= 3;
+        playingSince = playing ? playingSince || Date.now() : null;
+        if (!track || !track.url || !playing || Date.now() - playingSince < (config.syncAfterPlayingS || 20) * 1000) return;
+        // A delay the viewer chose by hand wins over any automatic correction
+        var delay = state.extraSubtitlesDelay || 0;
+        if (delay !== 0 && delay !== lastApplied) return;
+        // Subtitles matched to this exact release by hash are already in sync
+        if (window.__stremioSubs && window.__stremioSubs.scoreOf(track) >= 100) return;
+        var key = track.id + '|' + Math.floor(video.currentTime / (config.syncEverySlotS || 600));
+        if (done[key]) return;
+        done[key] = true;
+        busy = true;
+        var query = 'media=' + encodeURIComponent(video.currentSrc) + '&sub=' + encodeURIComponent(track.url) + '&at=' + Math.floor(video.currentTime);
+        fetch('/__tweaks/subsync?' + query).then(function (resp) {
+            return resp.json().then(function (body) { return { status: resp.status, body: body }; });
+        }).then(function (r) {
+            busy = false;
+            if (r.status === 503) {
+                // Without the Mac the subtitle stays as chosen; tell the viewer once
+                if (!warnedUnavailable) toast('Sincronização automática de legenda precisa do Mac ligado', 5000);
+                warnedUnavailable = true;
+                return;
+            }
+            if (r.status !== 200) return console.warn('[subsync] failed', r.status, JSON.stringify(r.body));
+            apply(r.body, track);
+        }).catch(function (err) {
+            busy = false;
+            console.warn('[subsync] request failed', err);
+        });
+    }
+
+    function onRouteChange() {
+        // A new video starts with no automatic delay applied
+        lastApplied = null;
+        playingSince = null;
+        window.__stremioSubSync = null;
+    }
+
+    // The app router navigates with pushState and announces it as historyChange
+    window.addEventListener('hashchange', onRouteChange);
+    window.addEventListener('historyChange', onRouteChange);
+    if (config.enabled && config.autoSync !== false) setInterval(check, 5000);
+})();

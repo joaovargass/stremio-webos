@@ -1,0 +1,11 @@
+--- player.chunk.js
++++ player.chunk.js
+@@ -1184,7 +1184,7 @@
+                     C.setProp("paused", !Ne())
+                 }, st = e => {
+                     C.setProp("time", e)
+-                }, ut = e => {
++                }, twkVideo = window.__stremioPlayerVideo = C, ut = window.__stremioSetSubtitlesDelay = e => {
+                     C.setProp("extraSubtitlesDelay", e)
+                 }, dt = e => {
+                     w.updateSettings({
