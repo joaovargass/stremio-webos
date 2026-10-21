@@ -4,6 +4,7 @@
 // player was opened straight from the library. Parameters come from STREMIO_TWEAKS.sources.
 (function () {
     var config = (window.STREMIO_TWEAKS || {}).sources || {};
+    var t = window.__twkI18n.t;
     var KEYS = { up: 38, down: 40, enter: 13, back: 461, escape: 27 };
     var panel = null;
     var list = null;
@@ -93,8 +94,8 @@
         // Build the picker frame once; rows are rebuilt on every open
         panel = element('div', 'twk-diag twk-sources');
         var header = panel.appendChild(element('div', 'twk-diag-header'));
-        header.appendChild(element('div', 'twk-diag-title', 'Trocar fonte'));
-        header.appendChild(element('div', 'twk-chip', '↑↓ OK'));
+        header.appendChild(element('div', 'twk-diag-title', t('sources.title')));
+        header.appendChild(element('div', 'twk-chip', t('sources.keys')));
         // The Magic Remote pointer closes the panel with this button, the remote with Back
         header.appendChild(element('div', 'twk-close', '✕')).addEventListener('click', function (e) { e.stopPropagation(); hide(); });
         list = panel.appendChild(element('div', 'twk-src-list'));
@@ -105,7 +106,7 @@
         // Fill the rows, mark the playing source and move the focus to it
         list.textContent = '';
         if (!items.length) {
-            list.appendChild(element('div', 'twk-src-empty', 'Nenhuma fonte encontrada para este título'));
+            list.appendChild(element('div', 'twk-src-empty', t('sources.none')));
             return;
         }
         items.forEach(function (stream, i) {
@@ -114,8 +115,8 @@
             row.addEventListener('mouseenter', function () { focus = i; moveFocus(0); });
             row.addEventListener('click', function (e) { e.stopPropagation(); focus = i; choose(); });
             if (stream === REFRESH) {
-                row.appendChild(element('div', 'twk-src-title', '↻ Testar as fontes de novo'));
-                row.appendChild(element('div', 'twk-src-details', 'Mede de novo a velocidade das melhores fontes e reordena a lista'));
+                row.appendChild(element('div', 'twk-src-title', t('sources.refresh')));
+                row.appendChild(element('div', 'twk-src-details', t('sources.refreshDetails')));
                 return;
             }
             var info = describe(stream);
@@ -137,18 +138,21 @@
 
     function show() {
         // Open the picker with a loading line, then the ranked sources
-        if (!panel) createPanel();
         open = true;
-        list.textContent = '';
-        list.appendChild(element('div', 'twk-src-empty', 'Buscando fontes...'));
-        requestAnimationFrame(function () { panel.classList.add('twk-visible'); });
-        window.__twkPanels.opened('sources');
-        Promise.all([ensureStreams(), window.__stremioDoctor && onPlayer() ? window.__stremioDoctor.currentStream() : null]).then(function (results) {
+        return window.__twkI18n.refresh().then(function () {
             if (!open) return;
-            playing = results[1];
-            fill(null);
-            // The background test keeps measuring: the list follows it while open, keeping the focused source
-            liveTimer = setInterval(function () { fill(items[focus]); }, 2000);
+            if (!panel) createPanel();
+            list.textContent = '';
+            list.appendChild(element('div', 'twk-src-empty', t('sources.loading')));
+            requestAnimationFrame(function () { panel.classList.add('twk-visible'); });
+            window.__twkPanels.opened('sources');
+            return Promise.all([ensureStreams(), window.__stremioDoctor && onPlayer() ? window.__stremioDoctor.currentStream() : null]).then(function (results) {
+                if (!open) return;
+                playing = results[1];
+                fill(null);
+                // The background test keeps measuring: the list follows it while open, keeping the focused source
+                liveTimer = setInterval(function () { fill(items[focus]); }, 2000);
+            });
         });
     }
 
@@ -182,12 +186,12 @@
         var stream = items[focus];
         if (stream === REFRESH) {
             if (window.__stremioTweaks && window.__stremioTweaks.retest) window.__stremioTweaks.retest();
-            notice('Testando as fontes de novo...');
+            notice(t('sources.retrying'));
             return;
         }
         hide();
         if (!stream) return;
-        if (onPlayer() && window.__stremioDoctor) return window.__stremioDoctor.playStream(stream, 'Trocando para: ');
+        if (onPlayer() && window.__stremioDoctor) return window.__stremioDoctor.playStream(stream, t('doctor.switch'));
         if (stream.deepLinks && stream.deepLinks.player && window.__stremioHistory) window.__stremioHistory.navigate(stream.deepLinks.player.replace(/^#/, ''));
     }
 
@@ -214,7 +218,7 @@
     function showHint(visible) {
         // Small reminder shown while a video takes long to start
         if (!hint) {
-            hint = element('div', 'twk-hint', config.hintText || 'Demorando? Botão verde: trocar fonte');
+            hint = element('div', 'twk-hint', t('sources.loadingHint'));
             document.body.appendChild(hint);
         }
         hint.classList.toggle('twk-visible', visible);
@@ -264,13 +268,13 @@
             var parts = hash.split('/');
             var playerMeta = decodeURIComponent(parts[parts.length - 2] || '');
             if (playerMeta && window.core) Promise.resolve(window.core.dispatch({ action: 'Ctx', args: { action: 'RewindLibraryItem', args: playerMeta } }, 'ctx')).catch(function () {});
-            notice('Recomeçando do início');
+            notice(t('restart.startingOver'));
             return;
         }
         var best = (window.__stremioRankedStreams || [])[0];
         var metaId = decodeURIComponent(hash.split('/')[3] || '');
         if (hash.indexOf('#/detail') !== 0 || !best || !metaId || !window.core) return;
-        notice('Recomeçando do início');
+        notice(t('restart.startingOver'));
         Promise.resolve(window.core.dispatch({ action: 'Ctx', args: { action: 'RewindLibraryItem', args: metaId } }, 'ctx')).catch(function () {}).then(function () {
             if (window.__stremioDoctor) window.__stremioDoctor.navigate(best.deepLinks.player.replace(/^#/, ''));
         });
@@ -283,7 +287,7 @@
         var key = video.getAttribute('src');
         if (resumeShown[key]) return;
         resumeShown[key] = true;
-        if (video.currentTime > 30) notice('Retomando de ' + clock(video.currentTime) + ' · botão azul: recomeçar');
+        if (video.currentTime > 30) notice(t('restart.resumeHint', { position: clock(video.currentTime) }));
     }
 
     var simple = (window.STREMIO_TWEAKS || {}).simple || {};
@@ -313,7 +317,7 @@
         } catch (_e) {
             return;
         }
-        setTimeout(function () { notice('OK abre o título · segure OK no cartão para mais opções (recomeçar, biblioteca, trailer)'); }, 1200);
+        setTimeout(function () { notice(t('restart.cardHint')); }, 1200);
     }
 
     function trackOk(e) {
@@ -351,7 +355,7 @@
             clearInterval(wait);
             if (!best) return;
             var short = window.__stremioTweaks && window.__stremioTweaks.summary ? window.__stremioTweaks.summary(best) : '';
-            notice('Tocando a melhor fonte' + (short ? ': ' + short : '') + ' · outras: botão verde');
+            notice(t('simple.playingBest', { summary: short || t('doctor.nextSource') }));
             if (window.__stremioDoctor) window.__stremioDoctor.navigate(best.deepLinks.player.replace(/^#/, ''), true);
         }, 300);
     }

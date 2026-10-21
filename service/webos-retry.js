@@ -7,6 +7,7 @@
 // remux produced by the streaming server. Parameters come from window.STREMIO_TWEAKS.
 (function () {
     var config = window.STREMIO_TWEAKS || {};
+    var t = window.__twkI18n.t;
     var retryConfig = config.stallRetry || { maxRetries: 10, retryDelayMs: 3000 };
     var hlsConfig = config.hlsFallback || { enabled: false };
     var TORRENT_URL = /^(https?:\/\/[^/]+)\/([0-9a-f]{40})\/(\d+)/i;
@@ -39,10 +40,10 @@
 
     function describe(stats) {
         // Build the pt-BR status line shown while waiting for the swarm; simple mode hides the swarm numbers
-        if ((config.simple || {}).enabled) return 'Carregando o vídeo...';
-        if (!stats) return 'Aguardando o torrent...';
+        if ((config.simple || {}).enabled) return t('retry.loading');
+        if (!stats) return t('retry.waiting');
         var kbps = Math.round((stats.downloadSpeed || 0) / 1024);
-        return 'Aguardando o torrent: ' + (stats.peers || 0) + ' peers, ' + kbps + ' KB/s';
+        return t('retry.waitingStats', { peers: stats.peers || 0, speed: kbps });
     }
 
     function randomId() {
@@ -86,7 +87,7 @@
         var currentSrc = video.getAttribute('src');
         var torrent = TORRENT_URL.exec(stream.url);
         var serverPromise = torrent ? Promise.resolve(torrent[1] + '/') : activeServer();
-        showOverlay(message || 'Formato não suportado direto, convertendo no servidor...');
+        showOverlay(message || t('retry.unsupported'));
         serverPromise.then(function (server) {
             if (!server || force || !rejected) return { server: server, force: force };
             return probe(server, stream.url).then(function (info) { return { server: server, force: needsReencode(info) }; });
@@ -94,7 +95,7 @@
             var server = plan.server;
             force = plan.force;
             if (!server || video.getAttribute('src') !== currentSrc) return;
-            if (force) showOverlay('Vídeo incompatível com a TV, convertendo a imagem no servidor...');
+            if (force) showOverlay(t('retry.convertVideo'));
             state.hlsUrl = buildHlsUrl(server, stream.url, force);
             state.forced = !!force;
             console.warn('[stall-retry] switching to HLS', force ? '(re-encoding the picture)' : '', state.hlsUrl);
@@ -119,7 +120,7 @@
         var attempt = state.retries;
         var currentSrc = video.getAttribute('src');
         fetchStats(match).then(function (stats) {
-            showOverlay(describe(stats) + ((config.simple || {}).enabled ? '' : ' (tentativa ' + attempt + '/' + retryConfig.maxRetries + ')'));
+            showOverlay(describe(stats) + ((config.simple || {}).enabled ? '' : t('retry.attempt', { current: attempt, total: retryConfig.maxRetries })));
             reload(video, currentSrc, resumeAt, currentSrc, retryConfig.retryDelayMs);
         });
     }
@@ -166,7 +167,7 @@
             if (video.getAttribute('src') !== src || !video.audioTracks || video.audioTracks.length > 0) return;
             // Without a converter the silent source cannot be fixed, so another source is the only cure
             if (!canConvert()) {
-                if (window.__stremioDoctor) window.__stremioDoctor.nextSource('áudio incompatível com a TV', true);
+                if (window.__stremioDoctor) window.__stremioDoctor.nextSource('tvCannotPlay', true);
                 return;
             }
             var torrent = TORRENT_URL.exec(src);
@@ -180,7 +181,7 @@
                     state.url = src;
                     state.retries = 0;
                 }
-                switchToHls(video, { url: src }, video.currentTime, 'Áudio incompatível com a TV, convertendo no servidor...');
+                switchToHls(video, { url: src }, video.currentTime, t('retry.convertAudio'));
             });
         }, hlsConfig.audioCheckDelayMs);
     }
@@ -215,7 +216,7 @@
             state.url = src;
             state.retries = 0;
         }
-        switchToHls(video, { url: src }, video.__lastTime || video.currentTime || 0, message);
+        switchToHls(video, { url: src }, video.__lastTime || video.currentTime || 0, message || t('retry.convertFrozen'));
         return true;
     };
 
@@ -249,11 +250,11 @@
         }
         // A remux the TV rejected as well carries a picture format it cannot decode (10-bit H.264, for one): re-encode it once
         if (hlsConfig.enabled && onHls && !state.forced && !starved && canConvert()) {
-            switchToHls(video, stream, resumeAt, 'Vídeo incompatível com a TV, convertendo a imagem no servidor...', true);
+            switchToHls(video, stream, resumeAt, t('retry.convertVideo'), true);
             return true;
         }
         // Out of options for this source: let the doctor move to the next ranked one
-        if (window.__stremioDoctor && window.__stremioDoctor.nextSource(starved ? 'o torrent não entregou dados' : 'a TV não conseguiu tocar esta fonte', true)) {
+        if (window.__stremioDoctor && window.__stremioDoctor.nextSource(starved ? 'torrentEmpty' : 'tvCannotPlay', true)) {
             return true;
         }
         hideOverlay();

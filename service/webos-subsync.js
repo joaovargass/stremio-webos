@@ -6,6 +6,7 @@
 // catch drift. Parameters come from STREMIO_TWEAKS.subtitles.
 (function () {
     var config = (window.STREMIO_TWEAKS || {}).subtitles || {};
+    var t = window.__twkI18n.t;
     var done = {};
     var retried = {};
     var lastApplied = null;
@@ -36,7 +37,7 @@
 
     function formatSeconds(ms) {
         // Signed seconds with one decimal, as shown in the toast
-        return (ms > 0 ? '+' : '') + (ms / 1000).toFixed(1).replace('.', ',') + ' s';
+        return (ms > 0 ? '+' : '') + window.__twkI18n.number(ms / 1000, 1) + ' s';
     }
 
     function apply(result, track) {
@@ -53,7 +54,7 @@
         window.__stremioSetSubtitlesDelay(result.offsetMs);
         window.__stremioSubSync = { offsetMs: result.offsetMs, track: track.id, at: Date.now() };
         console.info('[subsync] applied', result.offsetMs, 'ms to', track.id);
-        toast('Legenda sincronizada ' + (result.on === 'tv' ? 'na TV' : 'pelo Mac') + ' (' + formatSeconds(result.offsetMs) + ')', 4000);
+        toast(t(result.on === 'tv' ? 'subsync.appliedTv' : 'subsync.appliedComputer', { offset: formatSeconds(result.offsetMs) }), 4000);
     }
 
     function check() {
@@ -90,7 +91,7 @@
             busy = false;
             if (r.status === 503) {
                 // Without any way to measure the subtitle stays as chosen; tell the viewer once
-                if (!warnedUnavailable) toast('Sincronização automática de legenda indisponível', 5000);
+                if (!warnedUnavailable) toast(t('subsync.unavailable'), 5000);
                 warnedUnavailable = true;
                 return;
             }

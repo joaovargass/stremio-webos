@@ -5,12 +5,13 @@
 (function () {
     var config = (window.STREMIO_TWEAKS || {}).diagnostics || { refreshMs: 1000 };
     var doctorConfig = (window.STREMIO_TWEAKS || {}).doctor || {};
+    var t = window.__twkI18n.t;
     var HLS_URL = /^(https?:\/\/[^/]+)\/hlsv2\//i;
     var LAYOUT = [
-        { title: 'Saúde', rows: [['health', 'Estado'], ['reason', 'Motivo'], ['total', 'Buffer total'], ['totalBar'], ['player', 'No player'], ['ram', 'Na memória da TV']] },
-        { title: 'Servidor', rows: [['server', 'Em uso'], ['version', 'Versão'], ['limit', 'Limite / cache'], ['learned', 'Velocidade aprendida'], ['transcoder', 'Conversão HLS'], ['candidates', 'Candidatos']] },
-        { title: 'Torrent', rows: [['peers', 'Peers'], ['sources', 'Fontes'], ['speed', 'Velocidade'], ['speedBar'], ['needed', 'Necessário'], ['transfer', 'Baixado / enviado'], ['progress', 'Arquivo'], ['progressBar']] },
-        { title: 'Reprodução', rows: [['video', 'Vídeo'], ['position', 'Posição'], ['buffer', 'Buffer à frente'], ['bufferBar'], ['frames', 'Frames perdidos'], ['recovery', 'Recuperações'], ['subtitle', 'Legenda automática'], ['error', 'Erro']] }
+        { title: 'diag.health', rows: [['health', 'diag.health'], ['reason', 'diag.reason'], ['total', 'diag.totalBuffer'], ['totalBar'], ['player', 'diag.playerBuffer'], ['ram', 'diag.tvMemory']] },
+        { title: 'diag.server', rows: [['server', 'diag.serverUse'], ['version', 'diag.version'], ['limit', 'diag.limitCache'], ['learned', 'diag.learnedSpeed'], ['transcoder', 'diag.hlsConversion'], ['candidates', 'diag.candidates']] },
+        { title: 'diag.torrent', rows: [['peers', 'diag.peers'], ['sources', 'diag.sources'], ['speed', 'diag.speed'], ['speedBar'], ['needed', 'diag.needed'], ['transfer', 'diag.transferred'], ['progress', 'diag.file'], ['progressBar']] },
+        { title: 'diag.playback', rows: [['video', 'diag.video'], ['position', 'diag.position'], ['buffer', 'diag.bufferAhead'], ['bufferBar'], ['frames', 'diag.droppedFrames'], ['recovery', 'diag.recoveries'], ['subtitle', 'diag.autoSubtitle'], ['error', 'diag.error']] }
     ];
     var BUFFER_TARGET_S = 30;
     var panel = null;
@@ -20,6 +21,7 @@
     var timer = null;
     var busy = false;
     var serverInfo = {};
+    var labels = [];
 
     function element(tag, className, text) {
         // Small DOM helper used to build the panel once
@@ -33,14 +35,14 @@
         // Build header, sections, value cells and bars once
         panel = element('div', 'twk-diag twk-diag-grid');
         var header = element('div', 'twk-diag-header');
-        header.appendChild(element('div', 'twk-diag-title', 'Diagnóstico'));
+        header.appendChild(element('div', 'twk-diag-title', t('diag.title')));
         chip = header.appendChild(element('div', 'twk-chip', '...'));
         // The Magic Remote pointer closes the panel with this button, the remote with Back
         header.appendChild(element('div', 'twk-close', '✕')).addEventListener('click', function (e) { e.stopPropagation(); close(); });
         panel.appendChild(header);
         LAYOUT.forEach(function (section) {
             var box = panel.appendChild(element('div', 'twk-section'));
-            box.appendChild(element('div', 'twk-section-title', section.title));
+            labels.push({ node: box.appendChild(element('div', 'twk-section-title', t(section.title))), key: section.title });
             sections[section.title] = box;
             section.rows.forEach(function (row) {
                 if (row.length === 1) {
@@ -49,11 +51,18 @@
                     return;
                 }
                 var line = box.appendChild(element('div', 'twk-row'));
-                line.appendChild(element('span', 'twk-label', row[1]));
+                labels.push({ node: line.appendChild(element('span', 'twk-label', t(row[1]))), key: row[1] });
                 fields[row[0]] = line.appendChild(element('span', 'twk-value', '-'));
             });
         });
         document.body.appendChild(panel);
+    }
+
+    function refreshLabels() {
+        // Labels follow a language changed in Stremio while the app runs
+        labels.forEach(function (entry) { entry.node.textContent = t(entry.key); });
+        var title = panel && panel.querySelector('.twk-diag-title');
+        if (title) title.textContent = t('diag.title');
     }
 
     function setText(key, text, tone) {
@@ -107,7 +116,7 @@
         fetch(base + '/settings').then(function (resp) { return resp.json(); }).then(function (data) {
             var values = data.values || {};
             serverInfo[key] = { version: values.serverVersion, limit: values.btDownloadSpeedHardLimit, cache: values.cacheSize };
-        }).catch(function () { serverInfo[key] = { version: 'indisponível' }; });
+        }).catch(function () { serverInfo[key] = { unavailable: true }; });
     }
 
     function fetchJson(target) {
@@ -129,7 +138,7 @@
         // The speeds the ranking compares sources with, so a lowered 4K is explained
         var tv = learnedRate('twk.tvRate');
         var lan = learnedRate('twk.lanRate');
-        return 'TV ' + (tv ? mbps(tv) : 'aprendendo') + ' · Mac ' + (lan ? mbps(lan) : 'aprendendo');
+        return t('diag.learnedPair', { tv: tv ? mbps(tv) : t('diag.learning'), computer: lan ? mbps(lan) : t('diag.learning') });
     }
 
     function renderServer(origin, proxy, src, hash) {
@@ -145,15 +154,15 @@
         loadServerInfo(real, routed ? real : origin);
         var info = serverInfo[real] || {};
         var local = /127\.0\.0\.1|localhost/.test(real);
-        setText('server', real.replace(/^https?:\/\//, '') + (local ? ' (TV)' : routed ? ' (Mac, só este vídeo)' : ' (rede local)'), local ? 'good' : 'warn');
-        setText('version', info.version || '?');
-        var cache = info.cache === 0 ? 'sem cache' : info.cache ? megabytes(info.cache) : '?';
+        setText('server', real.replace(/^https?:\/\//, '') + ' ' + (local ? t('diag.server.tv') : routed ? t('diag.server.computerVideo') : t('diag.server.localNetwork')), local ? 'good' : 'warn');
+        setText('version', info.unavailable ? t('diag.unavailable') : info.version || '?');
+        var cache = info.cache === 0 ? t('diag.noCache') : info.cache ? megabytes(info.cache) : '?';
         setText('limit', (info.limit ? mbps(info.limit) : '?') + ' / ' + cache);
         setText('learned', learnedText());
         var transcoder = proxy && proxy.transcoder;
         // The TV converts with its own ffmpeg; a LAN server only takes over to go faster
         var tvConverts = transcoder && /127\.0\.0\.1|localhost/.test(transcoder);
-        setText('transcoder', transcoder ? transcoder.replace(/^https?:\/\//, '').replace(/\/$/, '') + (tvConverts ? ' (TV)' : ' (Mac)') : 'indisponível', transcoder ? 'good' : 'warn');
+        setText('transcoder', transcoder ? transcoder.replace(/^https?:\/\//, '').replace(/\/$/, '') + ' ' + t(tvConverts ? 'diag.server.tv' : 'diag.server.computerVideo') : t('diag.unavailable'), transcoder ? 'good' : 'warn');
         var candidates = proxy && proxy.candidates ? Object.keys(proxy.candidates).map(function (key) {
             return key.replace(/^https?:\/\//, '').replace(/\/$/, '') + (proxy.candidates[key] ? ' ✓' : ' ✕');
         }).join('  ') : '-';
@@ -163,7 +172,7 @@
     function renderTorrent(stats, video) {
         // Fill the torrent section and compare speed with the needed bitrate
         if (!stats) {
-            setText('peers', 'sem dados');
+            setText('peers', t('diag.noData'));
             return;
         }
         var needed = stats.streamLen && video.duration ? stats.streamLen / video.duration : 0;
@@ -171,14 +180,14 @@
         var tone = !needed ? null : margin >= 1.2 ? 'good' : margin >= 1 ? 'warn' : 'bad';
         // A file the server already holds needs no peers and no speed
         var complete = (stats.streamProgress || 0) >= 0.999;
-        setText('peers', stats.peers + ' conectados · ' + stats.unchoked + ' enviando', stats.unchoked || complete ? null : 'bad');
-        setText('sources', ((stats.sources || []).length || 'DHT') + ' · ' + (stats.connectionTries || 0) + ' tentativas');
-        if (complete) setText('speed', 'arquivo completo no servidor', 'good');
+        setText('peers', t('diag.connected', { peers: stats.peers, sending: stats.unchoked }), stats.unchoked || complete ? null : 'bad');
+        setText('sources', t('diag.sourcesAttempts', { sources: (stats.sources || []).length || 'DHT', attempts: stats.connectionTries || 0 }));
+        if (complete) setText('speed', t('diag.fullFile'), 'good');
         else setText('speed', mbps(stats.downloadSpeed) + (needed ? '  (' + margin.toFixed(1) + '×)' : ''), tone);
         setBar('speedBar', complete ? 1 : needed ? margin / 2 : 0, complete ? 'good' : tone);
         setText('needed', needed ? mbps(needed) : '?');
         setText('transfer', megabytes(stats.downloaded) + ' / ' + megabytes(stats.uploaded));
-        setText('progress', ((stats.streamProgress || 0) * 100).toFixed(1) + '% de ' + megabytes(stats.streamLen));
+        setText('progress', t('diag.fileProgress', { percent: window.__twkI18n.number((stats.streamProgress || 0) * 100, 1), size: megabytes(stats.streamLen) }));
         setBar('progressBar', stats.streamProgress || 0);
     }
 
@@ -188,17 +197,17 @@
         var retry = window.__stremioRetryState || {};
         var ahead = bufferAhead(video);
         var tone = ahead >= 20 ? 'good' : ahead >= 8 ? 'warn' : 'bad';
-        setText('video', video.videoWidth ? video.videoWidth + '×' + video.videoHeight : 'carregando');
+        setText('video', video.videoWidth ? video.videoWidth + '×' + video.videoHeight : t('diag.loading'));
         setText('position', clock(video.currentTime) + ' / ' + clock(video.duration));
         setText('buffer', ahead.toFixed(0) + ' s', tone);
         setBar('bufferBar', ahead / BUFFER_TARGET_S, tone);
-        setText('frames', quality && quality.totalVideoFrames ? quality.droppedVideoFrames + ' de ' + quality.totalVideoFrames : 'n/d (hardware)');
-        setText('recovery', (retry.retries || 0) + (retry.hlsUrl ? ' · modo HLS' : ''), retry.retries ? 'warn' : null);
+        setText('frames', quality && quality.totalVideoFrames ? quality.droppedVideoFrames + ' / ' + quality.totalVideoFrames : t('diag.noVideoTracks'));
+        setText('recovery', (retry.retries || 0) + (retry.hlsUrl ? ' · ' + t('diag.hls') : ''), retry.retries ? 'warn' : null);
         var pick = window.__stremioSubPick;
         var synced = window.__stremioSubSync;
-        setText('subtitle', (pick ? (pick.rule.indexOf('embedded') === 0 ? 'embutida · ' : 'externa · ') + pick.lang + (pick.label ? ' · ' + pick.label : '') : 'nenhuma') +
-            (synced ? ' · sincronizada ' + (synced.offsetMs / 1000).toFixed(1) + ' s' : ''));
-        setText('error', video.error ? video.error.code + ' · ' + video.error.message : 'nenhum', video.error ? 'bad' : 'good');
+        setText('subtitle', (pick ? t(pick.rule.indexOf('embedded') === 0 ? 'diag.embedded' : 'diag.external') + ' · ' + pick.lang + (pick.label ? ' · ' + pick.label : '') : t('diag.noSubtitle')) +
+            (synced ? ' · ' + t('diag.synced', { offset: window.__twkI18n.number(synced.offsetMs / 1000, 1) }) : ''));
+        setText('error', video.error ? video.error.code + ' · ' + video.error.message : t('diag.none'), video.error ? 'bad' : 'good');
     }
 
     function renderHealth(video, proxy) {
@@ -206,18 +215,21 @@
         var doctor = (window.__stremioDoctor || {}).state || {};
         var ra = proxy && proxy.readAhead;
         var status = doctor.status || 'ok';
-        var tone = status === 'ok' ? 'good' : status === 'atenção' || status === 'carregando' ? 'warn' : 'bad';
+        var tone = status === 'ok' ? 'good' : status === 'attention' || status === 'loading' ? 'warn' : 'bad';
         var target = doctorConfig.targetBufferS || 120;
         var player = doctor.playerBufferS !== undefined ? doctor.playerBufferS : bufferAhead(video);
         var total = doctor.totalBufferS !== undefined ? Math.max(doctor.totalBufferS, player) : player;
-        setText('health', status, tone);
-        setText('reason', doctor.reason || '-');
-        setText('total', total.toFixed(0) + ' s de ' + target + ' s', total >= 30 ? 'good' : total >= 10 ? 'warn' : 'bad');
+        setText('health', t('doctor.status.' + status), tone);
+        var reasonParts = String(doctor.reason || '').split('|');
+        var reason = reasonParts[0] ? t('doctor.reason.' + reasonParts[0]) : '-';
+        if (reasonParts.indexOf('noSwitch') !== -1) reason += ', ' + t('doctor.reason.noSwitch');
+        setText('reason', reason || '-');
+        setText('total', t('diag.secondsOf', { value: total.toFixed(0), target: target }), total >= 30 ? 'good' : total >= 10 ? 'warn' : 'bad');
         setBar('totalBar', total / target, total >= 30 ? 'good' : total >= 10 ? 'warn' : 'bad');
         setText('player', player.toFixed(0) + ' s');
-        if (!ra || !ra.enabled) return setText('ram', 'desligado');
-        var ramText = ra.active ? (doctor.ramBufferS || 0).toFixed(0) + ' s · ' + megabytes(ra.aheadBytes) : 'ocioso';
-        setText('ram', ramText + ' (limite ' + ra.budgetMb + ' MB)');
+        if (!ra || !ra.enabled) return setText('ram', t('diag.off'));
+        var ramText = ra.active ? (doctor.ramBufferS || 0).toFixed(0) + ' s · ' + megabytes(ra.aheadBytes) : t('diag.idle');
+        setText('ram', t('diag.memoryLimit', { value: ramText, limit: ra.budgetMb }));
     }
 
     function render() {
@@ -225,7 +237,7 @@
         if (busy) return;
         var video = document.querySelector('video');
         if (!video) {
-            chip.textContent = 'sem vídeo';
+            chip.textContent = t('diag.noVideo');
             return;
         }
         var src = video.currentSrc || video.src || '';
@@ -233,8 +245,8 @@
         // An HLS conversion of a torrent still reports that torrent swarm and server
         var torrent = window.__stremioDoctor.sourceTorrent(src);
         var origin = torrent ? torrent[1] : hls ? hls[1] : null;
-        chip.textContent = hls ? (torrent ? 'HLS · torrent' : 'HLS') : torrent ? 'torrent' : 'link direto';
-        sections.Torrent.style.display = torrent ? '' : 'none';
+        chip.textContent = hls ? (torrent ? t('diag.hlsTorrent') : t('diag.hls')) : torrent ? t('diag.torrent') : t('diag.directLink');
+        sections['diag.torrent'].style.display = torrent ? '' : 'none';
         busy = true;
         Promise.all([
             torrent ? fetchJson(torrent[1] + '/' + torrent[2] + '/' + torrent[3] + '/stats.json') : null,
@@ -250,11 +262,14 @@
 
     function open() {
         // Show the panel with its slide-in transition and start polling
-        if (!panel) createPanel();
-        render();
-        requestAnimationFrame(function () { panel.classList.add('twk-visible'); });
-        timer = setInterval(render, config.refreshMs);
-        window.__twkPanels.opened('diag');
+        return window.__twkI18n.refresh().then(function () {
+            if (!panel) createPanel();
+            refreshLabels();
+            render();
+            requestAnimationFrame(function () { panel.classList.add('twk-visible'); });
+            timer = setInterval(render, config.refreshMs);
+            window.__twkPanels.opened('diag');
+        });
     }
 
     function close() {

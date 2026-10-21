@@ -93,8 +93,6 @@
     },
     "ranking": {
         "enabled": true,
-        "badge": "⭐ Recomendado",
-        "warnPrefix": "⚠ ",
         "minSeedsByResolution": {
             "2160": 15,
             "1080": 6,
@@ -114,40 +112,33 @@
         },
         "unsupportedAudio": {
             "pattern": "\\bdts\\b|dts-hd|dts-x|truehd|\\bmlp\\b",
-            "penalty": 60,
-            "label": "áudio DTS/TrueHD"
+            "penalty": 60
         },
         "dolbyVisionOnly": {
             "pattern": "\\bdv\\b|dovi|dolby.?vision",
             "hdrPattern": "hdr",
-            "penalty": 60,
-            "label": "Dolby Vision sem HDR"
+            "penalty": 60
         },
         "remux": {
             "pattern": "remux",
-            "penalty": 30,
-            "label": "remux (bitrate alto)"
+            "penalty": 30
         },
         "threeD": {
             "pattern": "\\b3d\\b|hsbs|half-sbs",
-            "penalty": 80,
-            "label": "3D"
+            "penalty": 80
         },
         "cinemaCopy": {
             "pattern": "(^|[ ._\\-\\[(])(cam|camrip|hdcam|hd-cam|ts|hdts|hd-ts|telesync|tc|telecine|scr|screener|dvdscr)([ ._\\-\\])]|$)",
-            "penalty": 120,
-            "label": "cópia de cinema"
+            "penalty": 120
         },
         "directLinkBonus": 40,
         "overTvSpeed": {
             "margin": 0.9,
-            "penalty": 40,
-            "label": "acima da velocidade da TV"
+            "penalty": 40
         },
         "overLanSpeed": {
             "margin": 0.9,
-            "penalty": 40,
-            "label": "acima da velocidade do Mac"
+            "penalty": 40
         }
     },
     "simple": {
@@ -159,8 +150,6 @@
             "1080p",
             "720p"
         ],
-        "playLabel": "Assistir",
-        "moreHint": "Outras fontes: botão verde",
         "subtitleChoices": 3,
         "directOpen": true,
         "holdMs": 500,
@@ -222,7 +211,6 @@
         "maxItems": 10,
         "loadWaitMs": 8000,
         "loadingHintAfterMs": 6000,
-        "hintText": "Travou ou demorando? Botão verde: trocar fonte",
         "loadingHint": true
     },
     "restart": {

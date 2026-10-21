@@ -5,12 +5,12 @@
 (function () {
     var config = (window.STREMIO_TWEAKS || {}).subtitles || {};
     var simple = (window.STREMIO_TWEAKS || {}).simple || {};
+    var t = window.__twkI18n.t;
     var LANG_GROUPS = {
         'pt-br': ['pob', 'pt-br', 'pt_br', 'ptbr', 'pb', 'brazilian', 'portuguese (brazil)', 'português (brasil)'],
         pt: ['por', 'pt', 'pt-pt', 'portuguese', 'português']
     };
     var ISO3_TO_2 = { eng: 'en', spa: 'es', spl: 'es', spn: 'es', fre: 'fr', fra: 'fr', ger: 'de', deu: 'de', ita: 'it', jpn: 'ja', kor: 'ko', chi: 'zh', zho: 'zh', rus: 'ru', ara: 'ar', hin: 'hi', tur: 'tr', pol: 'pl', dut: 'nl', nld: 'nl', swe: 'sv' };
-    var LABELS = { 'pt-br': 'Português (BR)', pt: 'Português', en: 'English', es: 'Español', fr: 'Français', de: 'Deutsch', it: 'Italiano', ja: '日本語', ko: '한국어' };
     var RELEASE_TAGS = ['web', 'webdl', 'webrip', 'bluray', 'brrip', 'bdrip', 'hdtv', 'dvdrip', 'remux', '720p', '1080p', '2160p', 'amzn', 'nf', 'dsnp', 'hmax', 'atvp', 'hulu', 'ip'];
     var extraCache = {};
     var pending = {};
@@ -73,6 +73,14 @@
         return 3;
     }
 
+    function languageName(lang) {
+        // A language name in the viewer's language, the raw code when the dictionary has none
+        var base = baseLang(lang);
+        var key = 'subtitle.name.' + (base === 'pt-br' ? 'ptBR' : base);
+        var name = t(key);
+        return name === key ? lang : name;
+    }
+
     function tokens(text) {
         // Lowercase release words, joining WEB-DL style tags into one token
         return String(text || '').toLowerCase().replace(/web[-. ]?dl/g, 'webdl').split(/[^a-z0-9]+/).filter(Boolean);
@@ -100,10 +108,9 @@
 
     function prettify(track) {
         // Human readable label shown in the player menu, flagging release-matched subtitles
-        var base = baseLang(track.lang);
-        var name = LABELS[base] || track.lang;
-        var synced = track.m === 'h' ? ' · sincronizada' : '';
-        return Object.assign({}, track, { label: name + ' · ' + (track.origin || 'Addon') + synced });
+        var name = languageName(track.lang);
+        var synced = track.m === 'h' ? ' · ' + t('subtitle.label.synced') : '';
+        return Object.assign({}, track, { label: name + ' · ' + (track.origin || t('subtitle.origin.addon')) + synced });
     }
 
     function throughConverter(track) {
@@ -232,7 +239,7 @@
             var pool = parts[0] === 'embedded' ? embedded || [] : extra || [];
             var pick = choose(pool, parts[1], native);
             if (pick) {
-                console.info('[subs] auto-selected', priority[i], pick.lang, pick.label || '', pick.id);
+                console.info('[subs] auto-selected', priority[i], pick.lang, pick.id);
                 // Keep the last automatic choice for the diagnostics panel
                 window.__stremioSubPick = { rule: priority[i], lang: pick.lang, label: pick.label || '', at: Date.now() };
                 return parts[0] === 'embedded' ? { embedded: pick.id } : { extra: pick.id };
@@ -261,15 +268,17 @@
     }
 
     whenCoreReady(function (core) {
-        loadProfile(core);
-        window.addEventListener('historyChange', function () { loadProfile(core); });
-        // Post-process player state on its way to the UI, chaining any earlier wrapper
-        var original = core.getState;
-        core.getState = function (model) {
-            return original.apply(core, arguments).then(function (state) {
-                return model === 'player' ? enhancePlayer(state) : state;
-            });
-        };
+        window.__twkI18n.refresh().then(function () {
+            loadProfile(core);
+            window.addEventListener('historyChange', function () { loadProfile(core); });
+            // Post-process player state on its way to the UI, chaining any earlier wrapper
+            var original = core.getState;
+            core.getState = function (model) {
+                return original.apply(core, arguments).then(function (state) {
+                    return model === 'player' ? enhancePlayer(state) : state;
+                });
+            };
+        });
     });
 
     function onRouteChange() {
@@ -290,7 +299,9 @@
         var native = window.__stremioNativeLang || null;
         var embedded = (state.subtitlesTracks || []).slice().sort(function (a, b) {
             return isForced(a) - isForced(b) || isSdh(a) - isSdh(b) || rank(a.lang, native) - rank(b.lang, native);
-        }).map(function (t) { return { id: t.id, kind: 'embedded', label: (LABELS[baseLang(t.lang)] || t.lang) + ' · embutida' + (isSdh(t) ? ' (SDH)' : '') }; });
+        }).map(function (track) {
+            return { id: track.id, kind: 'embedded', label: languageName(track.lang) + ' · ' + t('subtitle.label.embedded') + (isSdh(track) ? t('subtitle.label.sdh') : '') };
+        });
         // The player lists addon and OpenSubtitles copies side by side; simple mode keeps one external track per language
         var langs = {};
         var extra = (state.extraSubtitlesTracks || []).filter(function (t) {
@@ -298,8 +309,10 @@
             if (simple.enabled && langs[lang]) return false;
             langs[lang] = true;
             return true;
-        }).map(function (t) { return { id: t.id, kind: 'extra', label: (LABELS[baseLang(t.lang)] || t.lang) + ' · externa' }; });
-        return embedded.concat(extra).concat([{ id: null, kind: 'off', label: 'desligada' }]);
+        }).map(function (track) {
+            return { id: track.id, kind: 'extra', label: languageName(track.lang) + ' · ' + t('subtitle.label.external') };
+        });
+        return embedded.concat(extra).concat([{ id: null, kind: 'off', label: t('subtitle.off') }]);
     }
 
     function cycleSubtitles() {
@@ -315,7 +328,7 @@
         if (next.kind === 'embedded') video.selectSubtitlesTrack(next.id);
         else if (next.kind === 'extra') video.selectExtraSubtitlesTrack(next.id);
         else video.disableSubtitlesTracks();
-        toast('Legenda: ' + next.label);
+        toast(t('subtitle.toast', { label: next.label }));
     }
 
     // The configured remote key cycles subtitles on the player

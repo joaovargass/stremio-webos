@@ -8,6 +8,7 @@
 (function () {
     var config = (window.STREMIO_TWEAKS || {}).doctor || {};
     var hints = (window.STREMIO_TWEAKS || {}).hints || {};
+    var t = window.__twkI18n.t;
     var TORRENT_URL = /^(https?:\/\/[^/]+)\/([0-9a-f]{40})\/(\d+)/i;
     var HINT_KEY = 'twk.hint.v3';
     var state = { status: 'ok', reason: '', totalBufferS: 0, playerBufferS: 0, ramBufferS: 0, speed: 0, needed: 0, switches: {}, exhausted: {}, tried: {}, started: {} };
@@ -178,13 +179,13 @@
             var current = results[1];
             var list = candidates(results[0] || [], current, automatic && prepared[videoId] ? (config.raceCandidates || 2) : 1);
             if (!list.length) {
-                toast('Não há outra fonte disponível para este título', 5000);
+                toast(t('doctor.noOtherSource'), 5000);
                 return null;
             }
             state.tried[videoId] = (state.tried[videoId] || []).concat(current ? [current] : []);
             return (list.length > 1 ? pickLive(list) : Promise.resolve(list[0])).then(function (next) {
                 console.warn('[doctor] next source', automatic ? 'auto' : 'manual', reason, next.infoHash || next.url);
-                playStream(next, (automatic ? 'Fonte instável (' + reason + '). ' : '') + 'Trocando para: ');
+                playStream(next, (automatic ? t('doctor.switchUnstable', { reason: reasonText(reason) }) + ' ' : '') + t('doctor.switch'));
             });
         });
         return true;
@@ -201,13 +202,13 @@
                 if (!noPeers) {
                     var lanOff = window.STREMIO_TWEAKS && window.STREMIO_TWEAKS.servers && window.STREMIO_TWEAKS.servers.useLan === false;
                     // Name the missing Mac when the switch is on but no LAN server answers
-                    var help = lanOff ? 'Ligue "Usar o servidor do Mac" (tecla amarela) ou escolha' : state.lanFallback ? 'Escolha' : 'Ligue o Mac ou escolha';
-                    return toast('Nenhuma fonte rápida o bastante agora. ' + help + ' outra fonte (tecla verde)', 9000);
+                    var help = lanOff ? t('doctor.enableLanOrChoose') : state.lanFallback ? t('doctor.choose') : t('doctor.turnOnComputerOrChoose');
+                    return toast(t('doctor.noFastSource') + ' ' + help + ' ' + t('doctor.anotherSource'), 9000);
                 }
                 var direct = (results[0] || []).filter(function (s) { return !s.infoHash && typeof s.url === 'string'; })[0];
                 console.warn('[doctor] no tried torrent reached a peer', tried.length, direct ? 'playing a direct link' : 'no direct link');
-                if (direct) return playStream(direct, 'Nenhum torrent conectou (' + tried.length + ' fontes sem peers). Trocando para link direto: ');
-                toast('Nenhum torrent conectou (' + tried.length + ' fontes sem peers). A rede pode estar bloqueando torrents agora; tente mais tarde ou um link direto (tecla verde)', 12000);
+                if (direct) return playStream(direct, t('doctor.noPeersDirect', { count: tried.length }));
+                toast(t('doctor.noPeersNetwork', { count: tried.length }), 12000);
             });
         });
     }
@@ -229,7 +230,7 @@
             prerouted[hash] = true;
             rerouted[hash] = true;
         }
-        console.info('[doctor] preparing a source in the background', next.infoHash || next.url, Math.round(fraction * 100) + '%', lan ? 'on the Mac' : '');
+        console.info('[doctor] preparing a source in the background', next.infoHash || next.url, Math.round(fraction * 100) + '%', lan ? 'on the LAN server' : '');
         window.__stremioTweaks.prewarm(next, fraction, lan);
     }
 
@@ -274,11 +275,11 @@
         // Replace the current player entry with the chosen stream
         // A short quality summary reads better than the release file name
         var short = window.__stremioTweaks && window.__stremioTweaks.summary ? window.__stremioTweaks.summary(stream) : '';
-        var title = short || String(stream.description || stream.title || '').split('\n').filter(function (l) { return l && l.indexOf('⭐') !== 0 && l.indexOf('⚠') !== 0; })[0] || 'próxima fonte';
+        var title = short || String(stream.description || stream.title || '').split('\n').filter(function (l) { return l && l.indexOf('⭐') !== 0 && l.indexOf('⚠') !== 0; })[0] || t('doctor.nextSource');
         // Say when the new source comes from the Mac, as every other Mac use is announced
-        var viaMac = stream.infoHash && prerouted[stream.infoHash.toLowerCase()] ? ' · pelo Mac' : '';
-        if (viaMac) announced[stream.infoHash.toLowerCase()] = true;
-        toast(prefix + title.slice(0, 70) + viaMac, 5000);
+        var viaComputer = stream.infoHash && prerouted[stream.infoHash.toLowerCase()] ? ' · ' + t('doctor.viaComputer') : '';
+        if (viaComputer) announced[stream.infoHash.toLowerCase()] = true;
+        toast(prefix + title.slice(0, 70) + viaComputer, 5000);
         stalledSince = null;
         loadingSince = null;
         // The new source gets its own race once it is loading
@@ -329,7 +330,7 @@
         rerouted[hash] = true;
         announced[hash] = true;
         console.warn('[doctor] rerouting', hash, 'to', proxy.fallback, reason);
-        toast('Usando o Mac para esta fonte (' + reason + ')', 6000);
+        toast(t('doctor.computerFallback', { reason: reasonText(reason) }), 6000);
         fetchJson('/__tweaks/route?hash=' + hash + '&to=remote').then(function (route) {
             stalledSince = null;
             loadingSince = null;
@@ -353,12 +354,12 @@
 
     function leaveLan(video, hash) {
         // Bring a video the Mac could not deliver back to the TV; a video already watched goes on to the next source
-        console.warn('[doctor] the Mac delivered nothing, back to the TV', hash);
-        toast('O Mac não conseguiu baixar esta fonte, voltando para a TV', 6000);
+        console.warn('[doctor] the LAN server delivered nothing, back to the TV', hash);
+        toast(t('doctor.computerFailed'), 6000);
         var watched = !!state.started[currentVideoId()];
         fetchJson('/__tweaks/route?hash=' + hash + '&to=default').then(function (route) {
             if (!route || !route.seamless) reloadInPlace(video);
-            if (watched) remedy(video, hash, null, 'o Mac não entregou dados');
+            if (watched) remedy(video, hash, null, 'computerNoData');
         });
     }
 
@@ -369,7 +370,7 @@
 
     function remedy(video, hash, proxy, reason) {
         // Try the LAN server for this video first, then the next ranked source, then wait before judging again
-        state.status = 'trocando';
+        state.status = 'switching';
         state.reason = reason;
         calmUntil = Date.now() + calmFor();
         if (hintShown && window.__stremioSources && window.__stremioSources.hint) window.__stremioSources.hint(false);
@@ -377,8 +378,8 @@
         if (proxy && useRemoteServer(video, hash, proxy, reason)) return;
         if (nextSource(reason, true)) return;
         // Nothing automatic is left to try for this video
-        state.status = 'crítico';
-        state.reason = reason + ', sem outra troca automática';
+        state.status = 'critical';
+        state.reason = reason + '|noSwitch';
     }
 
     function evaluate(video, stats, proxy, hash) {
@@ -397,12 +398,12 @@
         var routedTo = hash && proxy && (proxy.routes || {})[hash];
         if (routedTo && (proxy.candidates || {})[routedTo] === false && !lanLost[hash]) {
             lanLost[hash] = true;
-            toast('O Mac parou de responder: este vídeo voltou para a TV', 6000);
+            toast(t('doctor.noComputer'), 6000);
         }
         // A source already warmed on the Mac (heavy for the TV) starts there; say so once, as every Mac use is announced
         if (routedTo && (proxy.candidates || {})[routedTo] !== false && !announced[hash]) {
             announced[hash] = true;
-            toast('Esta fonte vem do Mac (pesada para a TV)', 5000);
+            toast(t('doctor.computerSource'), 5000);
         }
         if (!lanDelivers(video, hash, stats)) return leaveLan(video, hash);
         state.playerBufferS = playerBuffer(video);
@@ -448,20 +449,20 @@
         if (config.startOnLanWhenHeavy !== false && loadingSince && onTv && heavy && proxy.fallback && !rerouted[hash]) {
             // Start sources the TV clearly cannot sustain on the LAN server, before any picture is shown
             calmUntil = now + calmFor();
-            useRemoteServer(video, hash, proxy, 'acima da velocidade da TV');
+            useRemoteServer(video, hash, proxy, 'heavyTv');
         } else if (loadingSince && (waitedMs > (config.startTimeoutMs || 60000) || (waitedMs > (config.quickStartMs || 20000) && race.best && race.videoId === currentVideoId()))) {
-            remedy(video, hash, proxy, 'não começou');
+            remedy(video, hash, proxy, 'waiting');
         } else if (frozenWithData(video, hash, proxy, stalledMs)) {
             // The data is on the server yet the picture does not move: the TV pipeline cannot decode this file, a conversion can
             converted[hash] = true;
             calmUntil = now + calmFor();
-            state.status = 'trocando';
-            state.reason = 'imagem parada com dados prontos';
+            state.status = 'switching';
+            state.reason = 'frozenData';
             console.warn('[doctor] frozen with data on the server, converting', hash);
-            window.__stremioConvert(video, 'A TV não conseguiu decodificar este trecho, convertendo...');
+            window.__stremioConvert(video, t('retry.convertFrozen'));
         } else if (stalledMs > (config.stalledForMs || 45000) || choppy) {
             progress = [];
-            remedy(video, hash, proxy, choppy ? 'vídeo travando' : 'vídeo travado');
+            remedy(video, hash, proxy, choppy ? 'choppy' : 'stalledLong');
         }
     }
 
@@ -491,23 +492,29 @@
     function describe(slow, low, needed, torrent) {
         // Status shown in the diagnostics panel; slowness alone is reported, not acted on
         if (loadingSince) {
-            state.status = 'carregando';
-            state.reason = 'aguardando os primeiros dados';
+            state.status = 'loading';
+            state.reason = 'waiting';
         } else if (stalledSince) {
-            state.status = 'crítico';
-            state.reason = 'vídeo parado esperando dados';
+            state.status = 'critical';
+            state.reason = 'stalled';
         } else if (slow && low) {
-            state.status = 'atenção';
-            state.reason = 'download lento, buffer baixo';
+            state.status = 'attention';
+            state.reason = 'slowLow';
         } else if (slow) {
-            state.status = 'atenção';
-            state.reason = 'download abaixo do necessário, usando o buffer';
+            state.status = 'attention';
+            state.reason = 'slowBuffer';
         } else {
             state.status = 'ok';
-            state.reason = needed ? 'download acompanha o vídeo' : torrent ? 'sem dados do torrent ainda' : 'sem dados de velocidade (link direto)';
+            state.reason = needed ? 'keepingUp' : torrent ? 'waitingTorrent' : 'waitingDirect';
         }
         // Keep telling that nothing automatic is left while the problem lasts
-        if (state.status !== 'ok' && state.exhausted[currentVideoId()]) state.reason += ', sem outra troca automática';
+        if (state.status !== 'ok' && state.exhausted[currentVideoId()]) state.reason += '|noSwitch';
+    }
+
+    function reasonText(reason) {
+        // Reasons travel as stable English codes and read in the viewer's language only on screen
+        var key = 'doctor.reason.' + reason;
+        return t(key);
     }
 
     function raceStatus(video) {
@@ -557,7 +564,7 @@
         } catch (_e) {
             return;
         }
-        toast('Teclas: verde troca a fonte · vermelho troca a legenda · azul recomeça · amarelo abre os ajustes', 9000);
+        toast(t('doctor.firstRun'), 9000);
     }
 
     function onRouteChange() {

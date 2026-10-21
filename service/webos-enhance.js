@@ -4,6 +4,7 @@
 // warm it. All parameters come from window.STREMIO_TWEAKS, loaded from tweaks.json.
 (function () {
     var config = window.STREMIO_TWEAKS || {};
+    var t = window.__twkI18n.t;
     var prewarmed = {};
     var lastRanking = null;
     var live = { forId: null, candidates: [], since: {}, stats: {}, classes: {}, busy: {}, version: 0, timer: null, started: 0 };
@@ -13,8 +14,13 @@
     function compileRules(rank) {
         // Build every ranking regex once so scoring stays cheap on the TV CPU
         if (!rank) return null;
-        var penalties = [rank.unsupportedAudio, rank.remux, rank.threeD, rank.cinemaCopy].map(function (rule) {
-            return { regex: new RegExp(rule.pattern), penalty: rule.penalty, label: rule.label };
+        var penalties = [
+            ['enhance.warn.unsupportedAudio', rank.unsupportedAudio],
+            ['enhance.warn.remux', rank.remux],
+            ['enhance.warn.threeD', rank.threeD],
+            ['enhance.warn.cinemaCopy', rank.cinemaCopy]
+        ].map(function (entry) {
+            return { regex: new RegExp(entry[1].pattern), penalty: entry[1].penalty, labelKey: entry[0] };
         });
         return {
             goodAudio: new RegExp(rank.goodAudio.pattern),
@@ -158,9 +164,9 @@
         var entry = live.stats[key];
         var cls = live.classes[key];
         if (!entry || !cls) return '';
-        if (cls === 'dead') return 'sem conexão no teste';
-        var speed = (entry.speed / 1048576).toFixed(1).replace('.', ',') + ' MB/s';
-        return cls === 'waiting' ? 'testando · ' + speed : 'testada · ' + speed + ' · ' + entry.peers + ' peers';
+        if (cls === 'dead') return t('enhance.live.none');
+        var speed = window.__twkI18n.number(entry.speed / 1048576, 1) + ' MB/s';
+        return cls === 'waiting' ? t('enhance.live.testing', { speed: speed }) : t('enhance.live.tested', { speed: speed, peers: entry.peers });
     }
 
     function streamText(stream) {
@@ -247,18 +253,18 @@
         rules.penalties.forEach(function (rule) {
             if (rule.regex.test(text)) {
                 score -= rule.penalty;
-                warnings.push(rule.label);
+                warnings.push(t(rule.labelKey));
             }
         });
         if (rules.dolbyVision.test(text) && !rules.hdr.test(text)) {
             score -= rank.dolbyVisionOnly.penalty;
-            warnings.push(rank.dolbyVisionOnly.label);
+            warnings.push(t('enhance.warn.dolbyVision'));
         }
         // What the background test measured moves a source up or down within its quality
         var tested = live.classes[liveKey(stream)];
         var testScores = (config.liveTest || {}).scores || {};
         if (tested && testScores[tested]) score += testScores[tested];
-        if (tested === 'dead' || tested === 'tooSlow') warnings.push(tested === 'dead' ? 'sem conexão no teste' : 'lenta no teste');
+        if (tested === 'dead' || tested === 'tooSlow') warnings.push(tested === 'dead' ? t('enhance.live.none') : t('enhance.live.slow'));
         // Bitrate from file size and runtime, kept for the doctor to start heavy sources on the LAN server
         var size = sizeBytes(text);
         var bitrate = size && ctx.runtimeS ? size / ctx.runtimeS : null;
@@ -271,7 +277,7 @@
         var limit = ctx.lan ? ctx.lanRate : ctx.tvRate;
         if (over && bitrate && limit && bitrate > limit * over.margin) {
             score -= over.penalty;
-            warnings.push(over.label);
+            warnings.push(t(ctx.lan ? 'enhance.warn.overComputer' : 'enhance.warn.overTv'));
         }
         return { score: score, warnings: warnings };
     }
@@ -313,7 +319,7 @@
             }).sort(function (a, b) { return b.result.score - a.result.score; });
             var streams = scored.map(function (item) {
                 if (!item.result.warnings.length) return item.stream;
-                var note = rank.warnPrefix + item.result.warnings.join(', ');
+                var note = t('enhance.warningPrefix') + item.result.warnings.join(', ');
                 return Object.assign({}, item.stream, { description: note + '\n' + (item.stream.description || '') });
             });
             var content = Object.assign({}, group.content, { content: streams });
@@ -335,7 +341,7 @@
         var top = groups[0];
         if (top && top.best > 0) {
             var first = top.group.content.content[0];
-            top.group.content.content[0] = Object.assign({}, first, { description: rank.badge + '\n' + (first.description || '') });
+            top.group.content.content[0] = Object.assign({}, first, { description: t('enhance.recommended') + '\n' + (first.description || '') });
         }
         lastRanking = { signature: signature, groups: groups.map(function (item) { return item.group; }), rankedFor: rankedFor, rankedStreams: rankedStreams };
         return finishRanking(state, lastRanking);
@@ -381,10 +387,10 @@
         })[0];
         if (!home) return state;
         var entry = Object.assign({}, best, {
-            name: simple.playLabel || 'Assistir',
+            name: t('simple.watch'),
             // The stream card has room for one short line; the full summary goes to the details panel
             title: [summary(best, true), liveLabel(best)].filter(Boolean).join(' · '),
-            description: summary(best) + (liveLabel(best) ? '\n' + liveLabel(best) : '') + (simple.moreHint ? '\n' + simple.moreHint : '')
+            description: summary(best) + (liveLabel(best) ? '\n' + liveLabel(best) : '') + '\n' + t('simple.moreHint')
         });
         return Object.assign({}, state, { streams: [Object.assign({}, home, { content: Object.assign({}, home.content, { content: [entry] }) })] });
     }
@@ -406,8 +412,10 @@
     setInterval(refreshLan, 30000);
 
     whenCoreReady(function (core) {
-        wrapGetState(core);
-        syncServer(core);
+        window.__twkI18n.refresh().then(function () {
+            wrapGetState(core);
+            syncServer(core);
+        });
     });
 
     window.__stremioTweaks = {
