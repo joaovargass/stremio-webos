@@ -12,7 +12,7 @@
     function compileRules(rank) {
         // Build every ranking regex once so scoring stays cheap on the TV CPU
         if (!rank) return null;
-        var penalties = [rank.unsupportedAudio, rank.remux, rank.threeD].map(function (rule) {
+        var penalties = [rank.unsupportedAudio, rank.remux, rank.threeD, rank.cinemaCopy].map(function (rule) {
             return { regex: new RegExp(rule.pattern), penalty: rule.penalty, label: rule.label };
         });
         return {

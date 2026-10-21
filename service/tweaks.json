@@ -111,6 +111,11 @@
             "penalty": 80,
             "label": "3D"
         },
+        "cinemaCopy": {
+            "pattern": "(^|[ ._\\-\\[(])(cam|camrip|hdcam|hd-cam|ts|hdts|hd-ts|telesync|tc|telecine|scr|screener|dvdscr)([ ._\\-\\])]|$)",
+            "penalty": 120,
+            "label": "cópia de cinema"
+        },
         "directLinkBonus": 40,
         "overTvSpeed": {
             "margin": 0.9,
