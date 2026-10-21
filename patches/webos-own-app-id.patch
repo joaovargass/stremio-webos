@@ -1,0 +1,24 @@
+--- main.js
++++ main.js
+@@ -310,7 +310,8 @@
+                     void 0 !== globalThis.tizen && alert(e), void 0 !== globalThis.webOS && globalThis.webOS.service.request("luna://com.webos.notification", {
+                         method: "createToast",
+                         parameters: {
+-                            sourceId: "io.strem.tv",
++                            // Toasts are posted under this app's own id
++                            sourceId: "com.joaovargass.stremiodbg",
+                             message: e
+                         },
+                         onSuccess: () => {},
+--- service.js
++++ service.js
+@@ -554,7 +554,8 @@
+                             globalThis.tizen.application.launchAppControl(n, t, (() => r(t)), (r => e(t, r)))
+                         }
+                         if (globalThis.webOS) {
+-                            const t = "luna://io.strem.tv.server/";
++                            // Start this app's own service; webOS denies starting the service of another app
++                            const t = "luna://com.joaovargass.stremiodbg.server/";
+                             globalThis.webOS.service.request(t, {
+                                 method: "start",
+                                 parameters: {},
