@@ -1,9 +1,12 @@
 --- player.chunk.js
 +++ player.chunk.js
-@@ -1516,6 +1516,9 @@
+@@ -1516,6 +1516,12 @@
                                                                      onClick: U
                                                                  })
                                                              }
++                                                        }), null), (0, r.Yr)(t, (0, o.a0)(z, {
++                                                            icon: "skip-forward",
++                                                            onClick: () => window.__stremioSources && window.__stremioSources.toggle()
 +                                                        }), null), (0, r.Yr)(t, (0, o.a0)(z, {
 +                                                            icon: "network",
 +                                                            onClick: () => window.__stremioDiag && window.__stremioDiag.toggle()

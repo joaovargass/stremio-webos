@@ -1,0 +1,12 @@
+--- main.js
++++ main.js
+@@ -828,7 +828,8 @@
+                             }, l = () => {
+                                 t((e => (e.pop(), e)))
+                             };
+-                            return {
++                            // Expose the router history so tweak scripts navigate without breaking the Back key
++                            return window.__stremioHistory = {
+                                 entries: e,
+                                 size: () => e().length,
+                                 navigate: (e, t) => {

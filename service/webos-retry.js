@@ -113,6 +113,12 @@
         if (v instanceof HTMLMediaElement && v.currentTime > 0) v.__lastTime = v.currentTime;
     }, true);
 
+    function canConvert() {
+        // HLS needs a server with ffmpeg; an unknown state still allows one attempt
+        var doctor = window.__stremioDoctor;
+        return !doctor || doctor.state.transcoder !== null;
+    }
+
     function probeHasAudio(server, mediaUrl) {
         // Ask the streaming server whether the source carries any audio stream
         var probeUrl = server.replace(/\/$/, '') + '/hlsv2/probe?mediaURL=' + encodeURIComponent(mediaUrl);
@@ -128,6 +134,11 @@
         video.__audioChecked = src;
         setTimeout(function () {
             if (video.getAttribute('src') !== src || !video.audioTracks || video.audioTracks.length > 0) return;
+            // Without a converter the silent source cannot be fixed, so another source is the only cure
+            if (!canConvert()) {
+                if (window.__stremioDoctor) window.__stremioDoctor.nextSource('áudio incompatível com a TV', true);
+                return;
+            }
             var torrent = TORRENT_URL.exec(src);
             var serverPromise = torrent ? Promise.resolve(torrent[1] + '/') : activeServer();
             serverPromise.then(function (server) {
@@ -152,12 +163,17 @@
         checkMissingAudio(e.target);
     }, true);
 
-    // Leaving the player route hides any pending status box
-    window.addEventListener('hashchange', function () {
+    function onRouteChange() {
+        // Leaving the player route hides any pending status box
         if ((location.hash || '').indexOf('#/player') !== 0) hideOverlay();
-    });
+    }
+
+    // The app router navigates with pushState and announces it as historyChange
+    window.addEventListener('hashchange', onRouteChange);
+    window.addEventListener('historyChange', onRouteChange);
 
     window.__stremioRetryState = state;
+    window.__stremioToast = { show: showOverlay, hide: hideOverlay };
 
     window.__stremioStallRetry = function (video, stream) {
         if (!stream || typeof stream.url !== 'string') return false;
@@ -174,14 +190,18 @@
         var starved = match !== null && video.readyState === 0 && code !== 3;
         console.warn('[stall-retry] code', code, 'ready', video.readyState, 'hls', onHls, 'resumeAt', resumeAt, stream.url);
         // A starved torrent is retried as is, also when already on HLS
-        if (starved && state.retries < retryConfig.maxRetries) {
+        if (starved && retryConfig.enabled !== false && state.retries < retryConfig.maxRetries) {
             state.retries++;
             retryStalled(video, stream, match, resumeAt);
             return true;
         }
         // A rejected format gets one HLS attempt before the error is shown
-        if (hlsConfig.enabled && !onHls && !starved) {
+        if (hlsConfig.enabled && !onHls && !starved && canConvert()) {
             switchToHls(video, stream, resumeAt);
+            return true;
+        }
+        // Out of options for this source: let the doctor move to the next ranked one
+        if (window.__stremioDoctor && window.__stremioDoctor.nextSource(starved ? 'o torrent não entregou dados' : 'a TV não conseguiu tocar esta fonte', true)) {
             return true;
         }
         hideOverlay();

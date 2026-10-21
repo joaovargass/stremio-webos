@@ -6,6 +6,7 @@
     var config = window.STREMIO_TWEAKS || {};
     var TORRENT_URL = /^(https?:\/\/[^/]+)\/([0-9a-f]{40})\/(\d+)/i;
     var boostedHashes = {};
+    var prewarmed = {};
     var rules = compileRules(config.ranking);
 
     function compileRules(rank) {
@@ -44,14 +45,29 @@
             .catch(function (err) { console.warn('[tweaks] server selection failed', err); });
     }
 
+    function prewarm(stream) {
+        // Start the recommended torrent and fetch its first bytes while the viewer reads the list
+        var settings = config.prewarm || {};
+        var base = config.servers && config.servers.coreUrl;
+        if (settings.enabled === false || !base || !stream || !stream.infoHash || prewarmed[stream.infoHash]) return;
+        prewarmed[stream.infoHash] = true;
+        var url = base.replace(/\/$/, '') + '/' + stream.infoHash + '/' + (stream.fileIdx || 0);
+        boostTorrent(url).then(function () {
+            return fetch(url, { headers: { Range: 'bytes=0-' + ((settings.warmBytes || 1048576) - 1) } });
+        }).then(function (resp) {
+            console.info('[tweaks] prewarmed', stream.infoHash, resp.status);
+            return resp.arrayBuffer();
+        }).catch(function (err) { console.warn('[tweaks] prewarm failed', err); });
+    }
+
     function boostTorrent(url) {
         // Re-create the torrent engine with extra trackers once per info hash
         var match = TORRENT_URL.exec(url || '');
-        if (!match || boostedHashes[match[2]] || !config.trackers) return;
+        if (!match || boostedHashes[match[2]] || !config.trackers || (config.peerBoost || {}).enabled === false) return Promise.resolve();
         boostedHashes[match[2]] = true;
         var sources = config.trackers.map(function (t) { return 'tracker:' + t; }).concat(['dht:' + match[2]]);
         var body = { torrent: { infoHash: match[2] }, peerSearch: Object.assign({ sources: sources }, config.peerSearch) };
-        fetch(match[1] + '/' + match[2] + '/create', {
+        return fetch(match[1] + '/' + match[2] + '/create', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body)
@@ -81,9 +97,44 @@
         return 0;
     }
 
-    function scoreStream(stream) {
-        // Combine swarm health, resolution, audio quality and compatibility penalties
+    function runtimeSeconds(runtime) {
+        // Parse "68 min", "1h 30min" or "2h" into seconds
+        var text = String(runtime || '');
+        var h = /(\d+)\s*h/i.exec(text);
+        var m = /(\d+)\s*m/i.exec(text);
+        var total = (h ? parseInt(h[1], 10) * 3600 : 0) + (m ? parseInt(m[1], 10) * 60 : 0);
+        return total || null;
+    }
+
+    function sizeBytes(text) {
+        // Torrentio-like descriptions carry the file size as "💾 4.01 GB"
+        var match = /💾\s*([\d.]+)\s*(tb|gb|mb)/i.exec(text);
+        if (!match) return null;
+        var unit = { tb: 1e12, gb: 1e9, mb: 1e6 }[match[2].toLowerCase()];
+        return parseFloat(match[1]) * unit;
+    }
+
+    function tvRate() {
+        // Learned download rate of the TV's own server, in bytes per second, once enough samples exist
+        try {
+            var saved = JSON.parse(localStorage.getItem('twk.tvRate') || 'null');
+            return saved && saved.n >= 30 ? saved.rate : null;
+        } catch (_e) {
+            return null;
+        }
+    }
+
+    function refreshLan() {
+        // Remember whether a LAN server can take over, so ranking knows if the TV is on its own
+        fetch('/__tweaks/status').then(function (r) { return r.json(); }).then(function (s) {
+            window.__stremioLanAvailable = !!s.fallback;
+        }).catch(function () {});
+    }
+
+    function scoreStream(stream, context) {
+        // Combine swarm health, resolution, audio quality, compatibility and what the TV can sustain
         var rank = config.ranking;
+        var ctx = context || {};
         var text = streamText(stream);
         var warnings = [];
         var playable = typeof stream.url === 'string' || typeof stream.infoHash === 'string';
@@ -108,6 +159,15 @@
             score -= rank.dolbyVisionOnly.penalty;
             warnings.push(rank.dolbyVisionOnly.label);
         }
+        // Bitrate from file size and runtime, kept for the doctor to start heavy sources on the LAN server
+        var size = sizeBytes(text);
+        var bitrate = size && ctx.runtimeS ? size / ctx.runtimeS : null;
+        if (bitrate && stream.infoHash) window.__stremioStreamBitrate[stream.infoHash] = bitrate;
+        var over = rank.overTvSpeed;
+        if (over && bitrate && ctx.tvRate && !ctx.lan && bitrate > ctx.tvRate * over.margin) {
+            score -= over.penalty;
+            warnings.push(over.label);
+        }
         return { score: score, warnings: warnings };
     }
 
@@ -115,11 +175,18 @@
         // Sort streams inside each addon group, then groups by their best stream
         var rank = config.ranking;
         if (!rules || !rank.enabled || !state || !Array.isArray(state.streams)) return state;
+        // What the TV can sustain on its own decides how heavy sources are scored
+        var meta = state.metaItem && state.metaItem.content && state.metaItem.content.content;
+        var context = {
+            runtimeS: runtimeSeconds(meta && meta.runtime),
+            tvRate: tvRate(),
+            lan: (config.servers || {}).useLan !== false && window.__stremioLanAvailable === true
+        };
         var groups = state.streams.map(function (group) {
             var ready = group.content && group.content.type === 'Ready' && Array.isArray(group.content.content);
             if (!ready) return { group: group, best: -Infinity };
             var scored = group.content.content.map(function (stream) {
-                return { stream: stream, result: scoreStream(stream) };
+                return { stream: stream, result: scoreStream(stream, context) };
             }).sort(function (a, b) { return b.result.score - a.result.score; });
             var streams = scored.map(function (item) {
                 if (!item.result.warnings.length) return item.stream;
@@ -129,6 +196,17 @@
             var content = Object.assign({}, group.content, { content: streams });
             return { group: Object.assign({}, group, { content: content }), best: scored.length ? scored[0].result.score : -Infinity };
         }).sort(function (a, b) { return b.best - a.best; });
+        // Remember the playable streams in ranked order, and their video, for the source picker and the doctor
+        var selected = state.selected || {};
+        window.__stremioRankedFor = selected.streamPath ? selected.streamPath.id : null;
+        window.__stremioRankedStreams = groups.reduce(function (list, item) {
+            var content = item.group.content && item.group.content.content;
+            return Array.isArray(content) ? list.concat(content.filter(function (s) {
+                return s.deepLinks && s.deepLinks.player && (s.infoHash || s.url);
+            })) : list;
+        }, []);
+        // Warm the recommended torrent only on the title page, where the click to play happens
+        if ((location.hash || '').indexOf('#/detail') === 0) prewarm(window.__stremioRankedStreams[0]);
         var top = groups[0];
         if (top && top.best > 0) {
             var first = top.group.content.content[0];
@@ -153,6 +231,10 @@
     document.addEventListener('loadstart', function (e) {
         if (e.target instanceof HTMLMediaElement) boostTorrent(e.target.currentSrc || e.target.src);
     }, true);
+
+    window.__stremioStreamBitrate = window.__stremioStreamBitrate || {};
+    refreshLan();
+    setInterval(refreshLan, 30000);
 
     whenCoreReady(function (core) {
         wrapGetState(core);
