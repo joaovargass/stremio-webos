@@ -118,11 +118,13 @@
     }
 
     function pickLive(list) {
-        // Among prepared torrents, the one really downloading wins; direct links need no swarm; unknown keeps ranked order
+        // Among prepared torrents, the one that best sustains its own bitrate wins; direct links need no swarm; unknown keeps ranked order
         return Promise.all(list.map(function (s) {
             if (!s.infoHash) return Promise.resolve(Infinity);
+            var needed = (window.__stremioStreamBitrate || {})[s.infoHash] || 1048576;
             return fetchJson('/' + s.infoHash + '/' + (s.fileIdx || 0) + '/stats.json').then(function (st) {
-                return st ? (st.downloadSpeed || 0) + (st.unchoked || 0) : 0;
+                // A light source downloading at twice its bitrate beats a heavy one that is faster yet falls behind
+                return st ? (st.downloadSpeed || 0) / needed : 0;
             });
         })).then(function (scores) {
             var best = 0;
