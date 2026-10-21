@@ -154,6 +154,7 @@
         "startTimeoutMs": 60000,
         "quickStartMs": 20000,
         "raceAfterMs": 5000,
+        "raceMinRatio": 0.8,
         "startGraceMs": 20000,
         "maxAutoSwitches": 1,
         "maxStartSwitches": 3,

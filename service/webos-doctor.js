@@ -376,7 +376,9 @@
             // A direct link needs no swarm to start
             if (!best.infoHash) { race.best = best; return null; }
             return fetchJson('/' + best.infoHash + '/' + (best.fileIdx || 0) + '/stats.json').then(function (st) {
-                race.best = st && (st.downloadSpeed || 0) > 0 ? best : null;
+                // Fast enough to play: most of the bitrate its size and runtime need, or 1 MB/s when that is unknown
+                var needed = (window.__stremioStreamBitrate || {})[best.infoHash] || 1048576;
+                race.best = st && (st.downloadSpeed || 0) >= needed * (config.raceMinRatio || 0.8) ? best : null;
             });
         }).catch(function () {});
     }
