@@ -35,7 +35,8 @@
             xhr.setRequestHeader('Content-Type', 'application/json');
             xhr.send(JSON.stringify({
                 'servers.useLan': (tweaks.servers || {}).useLan !== false,
-                'readAhead.enabled': (tweaks.readAhead || {}).enabled !== false
+                'readAhead.enabled': (tweaks.readAhead || {}).enabled !== false,
+                'peerBoost.enabled': (tweaks.peerBoost || {}).enabled !== false
             }));
         })(window.STREMIO_TWEAKS);
     </script>

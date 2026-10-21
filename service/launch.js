@@ -67,12 +67,13 @@ function serveOverrides(req, res) {
     readBody(req, function(overrides) {
         if (typeof overrides['servers.useLan'] === 'boolean') tweaks.servers.useLan = overrides['servers.useLan'];
         if (typeof overrides['readAhead.enabled'] === 'boolean') readAhead.config.enabled = overrides['readAhead.enabled'];
+        if (typeof overrides['peerBoost.enabled'] === 'boolean') tweaks.peerBoost = Object.assign({}, tweaks.peerBoost, { enabled: overrides['peerBoost.enabled'] });
         if (!lanAllowed()) {
             routes = {};
             selectUpstream();
         }
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ useLan: lanAllowed(), readAhead: readAhead.config.enabled }));
+        res.end(JSON.stringify({ useLan: lanAllowed(), readAhead: readAhead.config.enabled, peerBoost: (tweaks.peerBoost || {}).enabled !== false }));
     });
 }
 
