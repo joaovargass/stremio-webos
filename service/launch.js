@@ -15,6 +15,7 @@ var candidates = tweaks.servers.candidates;
 var transcoders = tweaks.servers.transcoders || [];
 var upstream = url.parse(candidates[0]);
 var serverStatus = {};
+var probeFailures = {};
 var activeStreams = 0;
 var STREAM_PATH = /^\/([0-9a-f]{40}\/\d+|hlsv2\/)/i;
 var TORRENT_FILE_PATH = /^\/[0-9a-f]{40}\/\d+(\?|$)/i;
@@ -150,13 +151,21 @@ function probe(candidate, callback, timeoutMs) {
     req.on('error', function() { finish(false); });
 }
 
+function recordProbe(candidate, ok) {
+    // A server comes back on its first answer but goes down only after several failed probes in a row
+    probeFailures[candidate] = ok ? 0 : (probeFailures[candidate] || 0) + 1;
+    // A busy server serving a video can miss one probe; moving its videos to another server would starve the player
+    var downAfter = tweaks.servers.downAfterFailures || 3;
+    serverStatus[candidate] = ok || (!!serverStatus[candidate] && probeFailures[candidate] < downAfter);
+}
+
 function selectUpstream() {
     // Probe every candidate and transcoder in parallel so the diagnostics panel sees all of them
     var targets = candidates.concat(transcoders.filter(function(t) { return candidates.indexOf(t) === -1; }));
     var pending = targets.length;
     targets.forEach(function(candidate) {
         probe(candidate, function(ok) {
-            serverStatus[candidate] = ok;
+            recordProbe(candidate, ok);
             if (--pending > 0) return;
             applyBestUpstream();
             maybeDiscover();

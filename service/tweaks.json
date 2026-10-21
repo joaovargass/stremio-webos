@@ -11,6 +11,7 @@
         ],
         "probeTimeoutMs": 2500,
         "recheckIntervalMs": 30000,
+        "downAfterFailures": 3,
         "useLan": true,
         "discover": {
             "enabled": true,
