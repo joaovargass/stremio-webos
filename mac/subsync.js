@@ -142,10 +142,14 @@ function offsetAt(line, at0) {
 }
 
 async function subtitleText(sub) {
-    // Download the subtitle, time-limited since jobs run one at a time and a download that never ends would stop them all
+    // Download the subtitle, time-limited since jobs run one at a time; when the TV converter fails, read the original file it wraps
     const resp = await fetch(sub, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
-    if (!resp.ok) throw new Error(`subtitle download failed: ${resp.status}`);
-    return resp.text();
+    if (resp.ok) return resp.text();
+    const from = new URL(sub).searchParams.get('from');
+    if (!from || !/^https?:\/\//.test(from)) throw new Error(`subtitle download failed: ${resp.status}`);
+    const direct = await fetch(from, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+    if (!direct.ok) throw new Error(`subtitle download failed: ${resp.status}, original ${direct.status}`);
+    return direct.text();
 }
 
 async function sync(media, sub, at) {
