@@ -156,6 +156,8 @@
     // A stream that plays again clears the retry budget, the status box, and checks its audio
     document.addEventListener('playing', function (e) {
         if (!(e.target instanceof HTMLMediaElement)) return;
+        // Remember which source really played, so a later error on it reads as starvation, not as a rejected format
+        e.target.__playedSrc = e.target.getAttribute('src');
         state.retries = 0;
         hideOverlay();
         checkMissingAudio(e.target);
@@ -197,7 +199,9 @@
         var resumeAt = video.__lastTime || 0;
         var onHls = state.hlsUrl !== null && video.getAttribute('src') === state.hlsUrl;
         var match = TORRENT_URL.exec(stream.url);
-        var starved = match !== null && video.readyState === 0 && code !== 3;
+        // A torrent with no data yet, or one that already played and stopped, is starving; a decode error (3) means a broken file
+        var played = video.__playedSrc === video.getAttribute('src');
+        var starved = match !== null && code !== 3 && (video.readyState === 0 || played);
         console.warn('[stall-retry] code', code, 'ready', video.readyState, 'hls', onHls, 'resumeAt', resumeAt, stream.url);
         // A starved torrent is retried as is, also when already on HLS
         if (starved && retryConfig.enabled !== false && state.retries < retryConfig.maxRetries) {
