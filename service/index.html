@@ -12,6 +12,18 @@
             }).catch(function(){});
         }
     </script>
+    <link rel="stylesheet" href="webos-ui.css">
+    <script>
+        window.STREMIO_TWEAKS = (function() {
+            var xhr = new XMLHttpRequest();
+            xhr.open('GET', 'tweaks.json', false);
+            xhr.send();
+            return xhr.status === 200 ? JSON.parse(xhr.responseText) : {};
+        })();
+    </script>
+    <script defer src="webos-enhance.js"></script>
+    <script defer src="webos-retry.js"></script>
+    <script defer src="webos-diag.js"></script>
     <script defer src="runtime.js"></script>
     <script defer src="main.js"></script>
     <script defer src="service.js"></script>

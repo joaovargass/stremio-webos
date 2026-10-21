@@ -1,0 +1,29 @@
+--- video.chunk.js
++++ video.chunk.js
+@@ -21088,24 +21088,10 @@
+                                 e = s.HTML_VIDEO.MEDIA_ERR_NETWORK;
+                                 break;
+                             case 3:
+-                                e = s.HTML_VIDEO.MEDIA_ERR_DECODE, u({
+-                                    id: "com.webos.app.photovideo",
+-                                    url: D.url,
+-                                    name: "Stremio",
+-                                    position: -1
+-                                }, null, (function(e) {
+-                                    console.error(e)
+-                                }));
++                                e = s.HTML_VIDEO.MEDIA_ERR_DECODE;
+                                 break;
+                             case 4:
+-                                e = s.HTML_VIDEO.MEDIA_ERR_SRC_NOT_SUPPORTED, u({
+-                                    id: "com.webos.app.photovideo",
+-                                    url: D.url,
+-                                    name: "Stremio",
+-                                    position: -1
+-                                }, null, (function(e) {
+-                                    console.error(e)
+-                                }));
++                                e = s.HTML_VIDEO.MEDIA_ERR_SRC_NOT_SUPPORTED;
+                                 break;
+                             default:
+                                 e = s.UNKNOWN_ERROR

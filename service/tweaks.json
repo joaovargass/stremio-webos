@@ -1,0 +1,97 @@
+{
+    "servers": {
+        "coreUrl": "http://127.0.0.1:8080/",
+        "candidates": [
+            "http://192.168.0.3:11480/",
+            "http://192.168.0.3:11470/",
+            "http://127.0.0.1:11470/"
+        ],
+        "probeTimeoutMs": 2500,
+        "recheckIntervalMs": 30000
+    },
+    "trackers": [
+        "udp://tracker.opentrackr.org:1337/announce",
+        "udp://open.stealth.si:80/announce",
+        "udp://tracker.torrent.eu.org:451/announce",
+        "udp://open.demonii.com:1337/announce",
+        "udp://exodus.desync.com:6969/announce",
+        "udp://tracker.qu.ax:6969/announce",
+        "udp://tracker.tryhackx.org:6969/announce",
+        "udp://explodie.org:6969/announce",
+        "udp://tracker.dler.org:6969/announce",
+        "udp://tracker-udp.gbitt.info:80/announce",
+        "http://tracker.renfei.net:8080/announce"
+    ],
+    "peerSearch": {
+        "min": 40,
+        "max": 200
+    },
+    "stallRetry": {
+        "maxRetries": 10,
+        "retryDelayMs": 3000
+    },
+    "hlsFallback": {
+        "enabled": true,
+        "videoCodecs": [
+            "h264",
+            "h265",
+            "hevc"
+        ],
+        "audioCodecs": [
+            "aac",
+            "mp3",
+            "ac3",
+            "eac3"
+        ],
+        "maxAudioChannels": 6,
+        "onMissingAudio": true,
+        "audioCheckDelayMs": 1500
+    },
+    "ranking": {
+        "enabled": true,
+        "badge": "⭐ Recomendado",
+        "warnPrefix": "⚠ ",
+        "minSeedsByResolution": {
+            "2160": 15,
+            "1080": 6,
+            "720": 3,
+            "480": 2
+        },
+        "resolutionWeight": 12,
+        "healthWeight": 100,
+        "seedLogWeight": 3,
+        "goodAudio": {
+            "pattern": "ddp|dd\\+|eac3|e-ac-3|ac3|dd5|dd2|aac",
+            "bonus": 5
+        },
+        "surround": {
+            "pattern": "5\\.1|7\\.1|ddp5|dd5|6ch|8ch",
+            "bonus": 3
+        },
+        "unsupportedAudio": {
+            "pattern": "\\bdts\\b|dts-hd|dts-x|truehd|\\bmlp\\b",
+            "penalty": 60,
+            "label": "áudio DTS/TrueHD"
+        },
+        "dolbyVisionOnly": {
+            "pattern": "\\bdv\\b|dovi|dolby.?vision",
+            "hdrPattern": "hdr",
+            "penalty": 60,
+            "label": "Dolby Vision sem HDR"
+        },
+        "remux": {
+            "pattern": "remux",
+            "penalty": 30,
+            "label": "remux (bitrate alto)"
+        },
+        "threeD": {
+            "pattern": "\\b3d\\b|hsbs|half-sbs",
+            "penalty": 80,
+            "label": "3D"
+        },
+        "directLinkBonus": 40
+    },
+    "diagnostics": {
+        "refreshMs": 1000
+    }
+}

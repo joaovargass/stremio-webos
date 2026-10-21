@@ -1,0 +1,10 @@
+--- video.chunk.js
++++ video.chunk.js
+@@ -21078,6 +21078,7 @@
+                 A.style.width = "100%", A.style.height = "100%", A.style.backgroundColor = "black", A.controls = !1, A.onerror = function() {
+                     ! function() {
+                         if (w) return;
++                        if (window.__stremioStallRetry && window.__stremioStallRetry(A, D)) return;
+                         var e;
+                         switch ((A.error || {}).code) {
+                             case 1:

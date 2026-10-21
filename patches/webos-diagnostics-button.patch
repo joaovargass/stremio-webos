@@ -1,0 +1,12 @@
+--- player.chunk.js
++++ player.chunk.js
+@@ -1516,6 +1516,9 @@
+                                                                     onClick: U
+                                                                 })
+                                                             }
++                                                        }), null), (0, r.Yr)(t, (0, o.a0)(z, {
++                                                            icon: "network",
++                                                            onClick: () => window.__stremioDiag && window.__stremioDiag.toggle()
+                                                         }), null), (0, o.gb)((() => (0, r.s7)(t, ne.controls))), t), (e = ge(), (0, r.Yr)(e, ot), (0, o.gb)((() => (0, r.s7)(e, ne.time))), e)];
+                                                         var e, t
+                                                     }
