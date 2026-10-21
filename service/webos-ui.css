@@ -62,6 +62,7 @@
     --twk-focus-ring: 0.25vh;
     --twk-control: 4.4vh;
     --twk-bar: 0.8vh;
+    --twk-pieces: 2.6vh;
     --twk-dot: 1.4vh;
     --twk-toast-edge: 0.35vw;
     --twk-toast-width: 50vw;
@@ -352,6 +353,26 @@ html[data-twk-top="logview"] .twk-panel.twk-visible:not(.twk-logview) {
 .twk-bar-fill.twk-good { background: var(--twk-good); }
 .twk-bar-fill.twk-warn { background: var(--twk-warn); }
 .twk-bar-fill.twk-bad { background: var(--twk-bad); }
+
+/* File map: downloaded share above, peer availability below, painted on a canvas by webos-diag.js */
+.twk-pieces {
+    height: var(--twk-pieces);
+    margin: var(--twk-space-s) 0 var(--twk-space-xs);
+    overflow: hidden;
+    border-radius: var(--twk-radius-xs);
+    background: var(--twk-line);
+}
+
+.twk-pieces-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.twk-pieces-legend {
+    color: var(--twk-muted);
+    font-size: var(--twk-text-xs);
+}
 
 /* Source picker and settings sizes */
 

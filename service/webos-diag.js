@@ -12,10 +12,12 @@
     var LAYOUT = [
         { title: 'diag.health', rows: [['health', 'diag.health'], ['reason', 'diag.reason'], ['total', 'diag.totalBuffer'], ['totalBar'], ['player', 'diag.playerBuffer'], ['ram', 'diag.tvMemory']] },
         { title: 'diag.server', rows: [['server', 'diag.serverUse'], ['version', 'diag.version'], ['limit', 'diag.limitCache'], ['learned', 'diag.learnedSpeed'], ['transcoder', 'diag.hlsConversion'], ['candidates', 'diag.candidates']] },
-        { title: 'diag.torrent', rows: [['peers', 'diag.peers'], ['sources', 'diag.sources'], ['speed', 'diag.speed'], ['speedBar'], ['needed', 'diag.needed'], ['transfer', 'diag.transferred'], ['progress', 'diag.file'], ['progressBar']] },
+        { title: 'diag.torrent', rows: [['peers', 'diag.peers'], ['sources', 'diag.sources'], ['speed', 'diag.speed'], ['speedBar'], ['needed', 'diag.needed'], ['transfer', 'diag.transferred'], ['progress', 'diag.file'], ['progressBar'], ['pieceMap', 'diag.pieceMap', 'map']] },
         { title: 'diag.playback', rows: [['video', 'diag.video'], ['position', 'diag.position'], ['buffer', 'diag.bufferAhead'], ['bufferBar'], ['frames', 'diag.droppedFrames'], ['recovery', 'diag.recoveries'], ['subtitle', 'diag.autoSubtitle'], ['error', 'diag.error']] }
     ];
     var BUFFER_TARGET_S = 30;
+    var PIECE_PARTS = 120;
+    var pieceColors = null;
     var view = null;
     var fields = {};
     var sections = {};
@@ -32,6 +34,7 @@
             labels.push({ node: box.appendChild(element('div', 'twk-section-title', t(section.title))), key: section.title });
             sections[section.title] = box;
             section.rows.forEach(function (row) {
+                if (row[2] === 'map') return createPieceMap(box, row);
                 if (row.length === 1) {
                     var bar = box.appendChild(element('div', 'twk-bar'));
                     fields[row[0]] = bar.appendChild(element('div', 'twk-bar-fill'));
@@ -42,6 +45,61 @@
                 fields[row[0]] = line.appendChild(element('span', 'twk-value', '-'));
             });
         });
+    }
+
+    function createPieceMap(box, row) {
+        // A labelled strip over the whole file: upper lane what is downloaded, lower lane how many peers hold each part
+        labels.push({ node: box.appendChild(element('div', 'twk-label', t(row[1]))), key: row[1] });
+        var strip = box.appendChild(element('div', 'twk-pieces'));
+        fields[row[0]] = strip.appendChild(element('canvas', 'twk-pieces-canvas'));
+        labels.push({ node: box.appendChild(element('div', 'twk-pieces-legend', t('diag.pieceLegend'))), key: 'diag.pieceLegend' });
+    }
+
+    function tokenColors() {
+        // The strip paints with the design tokens, read once from the stylesheet
+        var css = getComputedStyle(document.documentElement);
+        var read = function (name) { return css.getPropertyValue(name).trim(); };
+        return { done: read('--twk-accent'), many: read('--twk-good'), few: read('--twk-warn'), none: read('--twk-bad'), empty: read('--twk-line'), mark: read('--twk-text'), fetching: read('--twk-text-soft') };
+    }
+
+    function renderPieces(map, video) {
+        // Paint the downloaded share and the peer availability of every part, the parts being fetched and the playhead
+        var canvas = fields.pieceMap;
+        if (!map || !map.parts || !map.parts.length) {
+            canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+            return;
+        }
+        var colors = pieceColors = pieceColors || tokenColors();
+        canvas.width = canvas.clientWidth;
+        canvas.height = canvas.clientHeight;
+        var ctx = canvas.getContext('2d');
+        var width = canvas.width / map.parts.length;
+        var lane = Math.floor(canvas.height * 0.45);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        map.parts.forEach(function (part, i) {
+            var x = Math.floor(i * width);
+            var w = Math.max(1, Math.ceil(width));
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = colors.empty;
+            ctx.fillRect(x, 0, w, lane);
+            // The downloaded share fills the upper lane from its bottom up
+            ctx.fillStyle = colors.done;
+            ctx.fillRect(x, lane * (1 - part[0]), w, lane * part[0]);
+            ctx.fillStyle = part[1] >= 3 ? colors.many : part[1] >= 1 ? colors.few : colors.none;
+            ctx.globalAlpha = part[0] >= 1 ? 0.35 : 0.85;
+            ctx.fillRect(x, lane + 2, w, canvas.height - lane - 4);
+        });
+        ctx.globalAlpha = 1;
+        // A thin line under the parts the engine downloads first
+        ctx.fillStyle = colors.fetching;
+        (map.selections || []).forEach(function (sel) {
+            var from = sel[0] / map.pieces * canvas.width;
+            ctx.fillRect(from, canvas.height - 2, Math.max(1, (sel[1] - sel[0] + 1) / map.pieces * canvas.width), 2);
+        });
+        if (video.duration) {
+            ctx.fillStyle = colors.mark;
+            ctx.fillRect(Math.round(video.currentTime / video.duration * canvas.width) - 1, 0, 2, canvas.height);
+        }
     }
 
     function refreshLabels() {
@@ -207,13 +265,15 @@
         busy = true;
         Promise.all([
             torrent ? shared.fetchJson(torrent[1] + '/' + torrent[2] + '/' + torrent[3] + '/stats.json') : null,
-            shared.fetchJson('/__tweaks/status')
+            shared.fetchJson('/__tweaks/status'),
+            torrent ? shared.fetchJson(torrent[1] + '/' + torrent[2] + '/' + torrent[3] + '/pieces.json?buckets=' + PIECE_PARTS) : null
         ]).then(function (results) {
             busy = false;
             renderHealth(video, results[1]);
             renderServer(origin, origin && origin.indexOf(location.host) !== -1 ? results[1] : null, src, torrent ? torrent[2].toLowerCase() : null);
             renderServers(results[1]);
             if (torrent) renderTorrent(results[0], video);
+            if (torrent) renderPieces(results[2], video);
             renderPlayback(video);
         });
     }
