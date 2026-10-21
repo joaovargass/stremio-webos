@@ -65,6 +65,8 @@
         }).catch(function () {}).then(function () { setTimeout(pollService, config.pollMs || 1000); });
     }
 
+    // Test scripts read the same lines the viewer sees
+    window.__twkDebug = { lines: lines };
     wrapConsole();
     // Every remote key, so a viewer can follow what a test presses
     window.addEventListener('keydown', function (e) { add('KEY', 'info', KEY_NAMES[e.keyCode] || 'tecla ' + e.keyCode); }, true);
