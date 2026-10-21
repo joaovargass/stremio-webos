@@ -9,7 +9,7 @@
     var config = (window.STREMIO_TWEAKS || {}).doctor || {};
     var hints = (window.STREMIO_TWEAKS || {}).hints || {};
     var TORRENT_URL = /^(https?:\/\/[^/]+)\/([0-9a-f]{40})\/(\d+)/i;
-    var HINT_KEY = 'twk.hint.v1';
+    var HINT_KEY = 'twk.hint.v2';
     var state = { status: 'ok', reason: '', totalBufferS: 0, playerBufferS: 0, ramBufferS: 0, speed: 0, needed: 0, switches: {}, exhausted: {} };
     var stalledSince = null;
     var calmUntil = 0;
@@ -134,8 +134,10 @@
 
     function playStream(stream, prefix) {
         // Replace the current player entry with the chosen stream
-        var title = String(stream.description || stream.title || '').split('\n').filter(function (l) { return l && l.indexOf('⭐') !== 0 && l.indexOf('⚠') !== 0; })[0] || 'próxima fonte';
-        toast(prefix + title.slice(0, 70), 6000);
+        // A short quality summary reads better than the release file name
+        var short = window.__stremioTweaks && window.__stremioTweaks.summary ? window.__stremioTweaks.summary(stream) : '';
+        var title = short || String(stream.description || stream.title || '').split('\n').filter(function (l) { return l && l.indexOf('⭐') !== 0 && l.indexOf('⚠') !== 0; })[0] || 'próxima fonte';
+        toast(prefix + title.slice(0, 70), 5000);
         stalledSince = null;
         loadingSince = null;
         // Replacing the player entry reloads the player and keeps the title page under it for Back
@@ -298,7 +300,7 @@
         } catch (_e) {
             return;
         }
-        toast('Novo: botão verde do controle troca a fonte; o ícone de rede mostra o diagnóstico', 8000);
+        toast('Teclas: verde troca a fonte · vermelho troca a legenda · amarelo abre os ajustes', 9000);
     }
 
     function onRouteChange() {

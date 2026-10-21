@@ -40,7 +40,8 @@
     }
 
     function describe(stats) {
-        // Build the pt-BR status line shown while waiting for the swarm
+        // Build the pt-BR status line shown while waiting for the swarm; simple mode hides the swarm numbers
+        if ((config.simple || {}).enabled) return 'Carregando o vídeo...';
         if (!stats) return 'Aguardando o torrent...';
         var kbps = Math.round((stats.downloadSpeed || 0) / 1024);
         return 'Aguardando o torrent: ' + (stats.peers || 0) + ' peers, ' + kbps + ' KB/s';
@@ -102,7 +103,7 @@
         var attempt = state.retries;
         var currentSrc = video.getAttribute('src');
         fetchStats(match).then(function (stats) {
-            showOverlay(describe(stats) + ' (tentativa ' + attempt + '/' + retryConfig.maxRetries + ')');
+            showOverlay(describe(stats) + ((config.simple || {}).enabled ? '' : ' (tentativa ' + attempt + '/' + retryConfig.maxRetries + ')'));
             reload(video, currentSrc, resumeAt, currentSrc, retryConfig.retryDelayMs);
         });
     }
