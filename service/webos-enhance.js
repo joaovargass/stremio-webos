@@ -6,6 +6,7 @@
     var config = window.STREMIO_TWEAKS || {};
     var prewarmed = {};
     var lastRanking = null;
+    var NOTICE = /reinstall|re-install|configure (this|the) addon|install the addon|not configured|expired|invalid (api )?key|update (this|the) addon/i;
     var rules = compileRules(config.ranking);
 
     function compileRules(rank) {
@@ -112,13 +113,21 @@
         }).catch(function () {});
     }
 
+    function isNotice(stream) {
+        // Addons publish messages as fake streams (reinstall, configure, expired key); a real direct link points at a file, not at a home page
+        if (stream.infoHash) return false;
+        var text = String(stream.name || '') + ' ' + String(stream.title || '') + ' ' + String(stream.description || '');
+        var url = typeof stream.url === 'string' ? stream.url : '';
+        return !/^https?:\/\/[^/]+\/[^?#]/.test(url) || NOTICE.test(text);
+    }
+
     function scoreStream(stream, context) {
         // Combine swarm health, resolution, audio quality, compatibility and what the TV can sustain
         var rank = config.ranking;
         var ctx = context || {};
         var text = streamText(stream);
         var warnings = [];
-        var playable = typeof stream.url === 'string' || typeof stream.infoHash === 'string';
+        var playable = !isNotice(stream) && (typeof stream.url === 'string' || typeof stream.infoHash === 'string');
         if (!playable) return { score: -1000, warnings: warnings };
         var resolution = parseResolution(text);
         var seeds = parseSeeds(text);
@@ -208,7 +217,7 @@
             var content = item.group.content && item.group.content.content;
             return Array.isArray(content) ? list.concat(content.filter(function (s) {
                 var key = s.infoHash ? s.infoHash.toLowerCase() + '/' + (s.fileIdx || 0) : s.url;
-                if (!s.deepLinks || !s.deepLinks.player || !key || seen[key]) return false;
+                if (!s.deepLinks || !s.deepLinks.player || !key || seen[key] || isNotice(s)) return false;
                 seen[key] = true;
                 return true;
             })) : list;
