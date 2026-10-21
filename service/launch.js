@@ -594,6 +594,31 @@ function touchTorrent(hash, server, res) {
     res.on('close', release);
 }
 
+function removeTorrent(entry) {
+    // Remove one torrent from its server so it stops dialing peers, and forget what the proxy knew about it
+    delete touched[entry.hash + '@' + entry.server.host];
+    delete seeded[entry.hash + '@' + entry.server.host];
+    forgetMirrors(entry);
+    var req = http.get({ hostname: entry.server.hostname, port: entry.server.port, path: '/' + entry.hash + '/remove', timeout: 10000 }, function(res) { res.resume(); });
+    req.on('timeout', function() { req.destroy(); });
+    req.on('error', function() {});
+}
+
+function serveForget(reqUrl, res) {
+    // Drop a torrent the source test rejected, unless a video is reading it
+    var hash = String(url.parse(reqUrl, true).query.hash || '').toLowerCase();
+    var removed = Object.keys(touched).filter(function(key) {
+        return touched[key].hash === hash && touched[key].open === 0;
+    }).map(function(key) {
+        var entry = touched[key];
+        removeTorrent(entry);
+        console.log('removed rejected torrent', hash, 'on', entry.server.host);
+        return entry.server.host;
+    });
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ hash: hash, removed: removed }));
+}
+
 function removeIdleTorrents() {
     // A torrent nobody read for a while keeps dialing peers forever; through a carrier NAT that starves every new connection of the home
     var limit = (tweaks.servers.idleTorrentMinutes || 0) * 60000;
@@ -601,12 +626,7 @@ function removeIdleTorrents() {
     Object.keys(touched).forEach(function(key) {
         var entry = touched[key];
         if (entry.open > 0 || Date.now() - entry.at < limit) return;
-        delete touched[key];
-        delete seeded[key];
-        forgetMirrors(entry);
-        var req = http.get({ hostname: entry.server.hostname, port: entry.server.port, path: '/' + entry.hash + '/remove', timeout: 10000 }, function(res) { res.resume(); });
-        req.on('timeout', function() { req.destroy(); });
-        req.on('error', function() {});
+        removeTorrent(entry);
         console.log('removed idle torrent', entry.hash, 'on', entry.server.host);
     });
 }
@@ -721,6 +741,7 @@ http.createServer(function(req, res) {
     if (urlPath === '/__tweaks/warm') return serveWarm(req.url, res);
     if (urlPath === '/__tweaks/mirror') return serveMirror(req.url, res);
     if (urlPath === '/__tweaks/logs') return serveLogs(req.url, res);
+    if (urlPath === '/__tweaks/forget') return serveForget(req.url, res);
     if (urlPath === '/device-info' && isLocal(sourceFor(req.url))) return serveDeviceInfo(res);
     if (urlPath === '/subtitles.vtt' && (tweaks.subtitles || {}).convert !== false) return serveSubtitles(req, res);
     if (urlPath === '/__tweaks/subsync') return serveSubsync(req, res);
