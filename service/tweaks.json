@@ -164,6 +164,7 @@
         "startOnLanWhenHeavy": true,
         "graceMs": 60000,
         "prewarmNext": true,
+        "prewarmOnLan": true,
         "prewarmAfterMs": 15000
     },
     "sources": {
