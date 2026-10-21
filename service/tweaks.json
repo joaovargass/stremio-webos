@@ -10,7 +10,7 @@
             "http://192.168.0.5:11480/"
         ],
         "probePath": "stats.json",
-        "probeTimeoutMs": 5000,
+        "probeTimeoutMs": 10000,
         "recheckIntervalMs": 30000,
         "downAfterFailures": 3,
         "useLan": true,
