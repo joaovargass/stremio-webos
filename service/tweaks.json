@@ -2,13 +2,9 @@
     "servers": {
         "coreUrl": "http://127.0.0.1:8080/",
         "candidates": [
-            "http://127.0.0.1:11470/",
-            "http://192.168.0.5:11480/",
-            "http://192.168.0.5:11470/"
+            "http://127.0.0.1:11470/"
         ],
-        "transcoders": [
-            "http://192.168.0.5:11480/"
-        ],
+        "transcoders": [],
         "probePath": "stats.json",
         "probeTimeoutMs": 10000,
         "recheckIntervalMs": 30000,
@@ -19,10 +15,16 @@
         "useLan": true,
         "discover": {
             "enabled": true,
+            "query": "stremio-lan?",
+            "queryPort": 11479,
+            "group6": "ff02::114",
+            "answerWaitMs": 1500,
+            "probeTimeoutMs": 3000,
             "port": 11480,
             "timeoutMs": 700,
             "concurrency": 32,
-            "everyMs": 300000
+            "everyMs": 60000,
+            "scanEveryMs": 300000
         },
         "subsyncPort": 11481
     },

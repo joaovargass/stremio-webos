@@ -2,6 +2,7 @@ process.env.NODE_PATH = (process.env.NODE_PATH || '') + ':/usr/lib/node_modules:
 require('module').Module._initPaths();
 process.env.APP_PATH = process.env.APP_PATH || __dirname;
 
+var dgram = require('dgram');
 var http = require('http');
 var https = require('https');
 var fs = require('fs');
@@ -36,6 +37,10 @@ var subtitleCache = [];
 var ownServer = false;
 var hlsSessions = {};
 var lastScan = 0;
+var lastSubnetScan = 0;
+var lastNetwork = null;
+var discovered = {};
+var serverInfo = {};
 var readAhead = new ReadAhead(tweaks.readAhead || { enabled: false });
 readAhead.mirrorsFor = mirrorsFor;
 var PROXY_LOOPBACK = /http(%3A|:)(%2F|\/)(%2F|\/)127\.0\.0\.1(%3A|:)8080/gi;
@@ -60,15 +65,39 @@ function serveLogs(reqUrl, res) {
     res.end(JSON.stringify({ last: logSeq, lines: logLines.filter(function(line) { return line.n > since; }) }));
 }
 
-function lanAddress() {
-    // The address other LAN hosts use to reach the streaming server running on this TV
+function familyOf(net) {
+    // Node names the address family with a string or, in some versions, with a number
+    return net.family === 6 || net.family === 'IPv6' ? 'IPv6' : 'IPv4';
+}
+
+function tvAddresses() {
+    // Every address of this TV that another host of the network can reach; link-local IPv6 needs a zone no peer knows
     var nets = os.networkInterfaces();
-    var names = Object.keys(nets);
-    for (var i = 0; i < names.length; i++) {
-        var found = nets[names[i]].filter(function(n) { return n.family === 'IPv4' && !n.internal; })[0];
-        if (found) return found.address;
-    }
-    return null;
+    return Object.keys(nets).reduce(function(all, name) {
+        return all.concat((nets[name] || []).filter(function(n) { return !n.internal && !/^fe80:/i.test(n.address); }).map(function(n) {
+            return { address: n.address, family: familyOf(n), interface: name };
+        }));
+    }, []);
+}
+
+function tvAddress(family) {
+    // The first address of this TV in one family, or null when the network offers none (an IPv6-only hotspot has no IPv4)
+    return (tvAddresses().filter(function(a) { return a.family === family; })[0] || {}).address || null;
+}
+
+function tvAddressFor(peerHost) {
+    // The TV address a LAN host can reach: the same family as that host
+    return tvAddress(String(peerHost).indexOf(':') !== -1 ? 'IPv6' : 'IPv4');
+}
+
+function urlHost(address) {
+    // An IPv6 address goes between brackets inside a URL
+    return String(address).indexOf(':') !== -1 ? '[' + address + ']' : address;
+}
+
+function networkKey() {
+    // Changes whenever the TV joins another network or gets new addresses
+    return tvAddresses().map(function(a) { return a.address; }).sort().join(',');
 }
 
 function isLocal(server) {
@@ -122,9 +151,10 @@ function sourceFor(reqUrl) {
 }
 
 function mediaHost(target, source) {
-    // Where the target server can read the source media: its own loopback, the TV LAN address or the source host
+    // Where the target server can read the source media, ready for a URL: its own loopback, the TV address it can reach or the source host
     if (target.host === source.host) return '127.0.0.1';
-    return isLocal(source) ? lanAddress() : source.hostname;
+    var host = isLocal(source) ? tvAddressFor(target.hostname) : source.hostname;
+    return host ? urlHost(host) : null;
 }
 
 function rewriteLoopback(path, target, source) {
@@ -500,15 +530,96 @@ function selectUpstream() {
     });
 }
 
+function onNetworkChange() {
+    // Servers found on the previous network must answer again before they get any request, and discovery runs at once
+    var key = networkKey();
+    if (key === lastNetwork) return;
+    if (lastNetwork !== null) console.log('network changed:', key || 'no address');
+    lastNetwork = key;
+    lastScan = 0;
+    lastSubnetScan = 0;
+    Object.keys(discovered).forEach(function(found) { serverStatus[found] = false; });
+}
+
 function maybeDiscover() {
-    // Look for the LAN server on the TV subnet when no configured LAN server answers, e.g. after the router changed IPs
+    // Look for a LAN server whenever none answers: at start, after a network change and every discover.everyMs
     var discover = tweaks.servers.discover || {};
+    onNetworkChange();
     var lanUp = candidates.some(function(c) { return !isLocal(url.parse(c)) && serverStatus[c]; });
-    var own = lanAddress();
-    if (!discover.enabled || !lanAllowed() || lanUp || !own || Date.now() - lastScan < (discover.everyMs || 300000)) return;
+    if (!discover.enabled || !lanAllowed() || lanUp || Date.now() - lastScan < discover.everyMs) return;
     lastScan = Date.now();
-    scanSubnet(own, discover, function(found) {
-        if (found) adoptServer(found);
+    askLan(discover, function(answers) {
+        if (answers.length) return adoptAnswers(answers, discover);
+        // A server without the discovery responder can still be found on an IPv4 network by its port, less often since it probes every address
+        var own = tvAddress('IPv4');
+        if (!own || Date.now() - lastSubnetScan < discover.scanEveryMs) return;
+        lastSubnetScan = Date.now();
+        scanSubnet(own, discover, function(found) { if (found) adoptServer(found, {}); });
+    });
+}
+
+function askLan(discover, done) {
+    // One query datagram per address family: an IPv4 broadcast and the IPv6 group on every interface; done gets one answer per server after answerWaitMs
+    var answers = {};
+    var sockets = [];
+    var onAnswer = function(message, rinfo) {
+        var body = null;
+        try { body = JSON.parse(message.toString('utf8')); } catch (_) { return; }
+        if (!body || body.service !== 'stremio-lan' || !body.port) return;
+        // A server with several interfaces answers once per interface and family; its addresses are merged
+        var key = body.name + '|' + body.port;
+        var answer = answers[key] = answers[key] || { body: body, from: [] };
+        answer.from.push(rinfo.address);
+    };
+    var open = function(type, send) {
+        var socket = dgram.createSocket(type === 'udp6' ? { type: 'udp6', ipv6Only: true } : 'udp4');
+        sockets.push(socket);
+        socket.on('message', onAnswer);
+        socket.on('error', function(err) { console.warn('discovery', type, err.message); });
+        socket.bind(0, function() { send(socket); });
+    };
+    var query = Buffer.from(discover.query);
+    if (tvAddress('IPv4')) open('udp4', function(socket) {
+        socket.setBroadcast(true);
+        socket.send(query, discover.queryPort, '255.255.255.255', function() {});
+    });
+    var v6 = tvAddresses().filter(function(a) { return a.family === 'IPv6'; });
+    if (v6.length) open('udp6', function(socket) {
+        // The group is link-local, so each interface with IPv6 gets its own copy
+        v6.map(function(a) { return a.interface; }).filter(function(name, i, all) { return all.indexOf(name) === i; }).forEach(function(name) {
+            socket.send(query, discover.queryPort, discover.group6 + '%' + name, function() {});
+        });
+    });
+    setTimeout(function() {
+        sockets.forEach(function(socket) { try { socket.close(); } catch (_) {} });
+        done(Object.keys(answers).map(function(key) { return answers[key]; }));
+    }, discover.answerWaitMs);
+}
+
+function answerUrls(answer) {
+    // Addresses to try for one answering server, the one the answer came from first since it proved reachable
+    var hosts = answer.from.concat((answer.body.addresses || []).map(function(a) { return a.address; }));
+    return hosts.filter(function(host, i) {
+        return host && !/^fe80:/i.test(host) && hosts.indexOf(host) === i;
+    }).map(function(host) { return 'http://' + urlHost(host) + ':' + answer.body.port + '/'; });
+}
+
+function adoptAnswers(answers, discover) {
+    // Probe every address of the answering servers in parallel and adopt, per server, the first one in order that answers
+    answers.forEach(function(answer) {
+        var urls = answerUrls(answer);
+        var results = urls.map(function() { return null; });
+        var settle = function() {
+            if (results.indexOf(null) !== -1) return;
+            var best = urls.filter(function(u, i) { return results[i]; })[0];
+            if (best) adoptServer(best, { subsyncPort: answer.body.subsyncPort, name: answer.body.name });
+        };
+        urls.forEach(function(candidate, i) {
+            probe(candidate, function(ok) {
+                results[i] = ok ? 1 : 0;
+                settle();
+            }, discover.probeTimeoutMs);
+        });
     });
 }
 
@@ -539,9 +650,24 @@ function scanSubnet(own, discover, done) {
     for (var n = 0; n < (discover.concurrency || 32); n++) next();
 }
 
-function adoptServer(found) {
+function dropServer(server) {
+    // Forget a discovered server that no longer answers, with the videos routed to it
+    candidates.splice(candidates.indexOf(server), 1);
+    if (transcoders.indexOf(server) !== -1) transcoders.splice(transcoders.indexOf(server), 1);
+    Object.keys(routes).forEach(function(hash) { if (routes[hash] === server) delete routes[hash]; });
+    delete serverStatus[server];
+    delete probeFailures[server];
+    delete serverInfo[server];
+    delete discovered[server];
+}
+
+function adoptServer(found, info) {
     // Use the discovered server right after the TV, and as transcoder since it is the ffmpeg build
-    console.log('discovered LAN streaming server', found);
+    console.log('discovered LAN streaming server', found, info.name || '');
+    // Servers found earlier on another network or address are gone, so they leave the list instead of piling up
+    Object.keys(discovered).forEach(function(old) { if (old !== found && !serverStatus[old]) dropServer(old); });
+    discovered[found] = true;
+    serverInfo[found] = info;
     if (candidates.indexOf(found) === -1) {
         var firstRemote = candidates.filter(function(c) { return !isLocal(url.parse(c)); })[0];
         candidates.splice(firstRemote ? candidates.indexOf(firstRemote) : candidates.length, 0, found);
@@ -739,7 +865,9 @@ function subsyncServer(source) {
     // The sync service runs on the host of the LAN ffmpeg server, on its own port
     var transcoder = lanTranscoder(source);
     if (!transcoder || isLocal(transcoder)) return null;
-    return url.parse('http://' + transcoder.hostname + ':' + (tweaks.servers.subsyncPort || 11481) + '/');
+    // A discovered server tells its own sync port; a configured one uses the default
+    var info = serverInfo[url.format(transcoder)] || {};
+    return url.parse('http://' + urlHost(transcoder.hostname) + ':' + (info.subsyncPort || tweaks.servers.subsyncPort) + '/');
 }
 
 function serveSubsync(req, res) {
