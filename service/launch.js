@@ -717,9 +717,22 @@ http.createServer(function(req, res) {
 process.env.FFMPEG_BIN = path.join(__dirname, 'bin', 'ffmpeg');
 process.env.FFPROBE_BIN = path.join(__dirname, 'bin', 'ffprobe');
 
+function seedServerSettings() {
+    // A TV has none of the GPUs the bundled server tests at start, and an update replaces its saved settings; saying so up front skips the failing tests
+    var file = path.join(process.env.APP_PATH, 'server-settings.json');
+    var settings = {};
+    try { settings = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) {}
+    if (settings.transcodeHardwareAccel === false) return;
+    settings.transcodeHardwareAccel = false;
+    try { fs.writeFileSync(file, JSON.stringify(settings, null, 4)); } catch (err) { console.error('server settings not writable', err.message); }
+}
+
 // Start the bundled server only when no streaming server already owns :11470, saving RAM
 probe('http://127.0.0.1:11470/', function(running) {
-    if (!running) require('./server.js');
+    if (!running) {
+        seedServerSettings();
+        require('./server.js');
+    }
     selectUpstream();
     if (tweaks.servers.recheckIntervalMs) {
         setInterval(selectUpstream, tweaks.servers.recheckIntervalMs);
