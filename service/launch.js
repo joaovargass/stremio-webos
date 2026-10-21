@@ -1016,22 +1016,33 @@ function pruneCache(keep) {
     });
 }
 
-function renewDevMode() {
+function renewDevMode(attempt) {
     // Reset the Developer Mode session from the TV itself, so the TV never removes the app when no computer renews it
     var settings = tweaks.devMode || {};
     if (settings.keepAlive === false) return;
     var token = '';
     try { token = fs.readFileSync(settings.tokenPath, 'utf8').trim(); } catch (err) { return console.warn('dev mode token not readable', err.code); }
     if (!/^[0-9A-Za-z]+$/.test(token)) return console.warn('dev mode token has an unexpected format');
+    attempt = attempt || 1;
+    // A dropped connection or a refused answer is tried again a few minutes later instead of waiting for the next long interval
+    var retry = once(function(reason) {
+        var again = attempt < (settings.retries || 0);
+        console.warn('dev mode renewal failed', reason, again ? '(attempt ' + attempt + ', retrying in ' + Math.round(settings.retryMs / 1000) + ' s)' : '(attempt ' + attempt + ', giving up until the next renewal)');
+        if (again) setTimeout(function() { renewDevMode(attempt + 1); }, settings.retryMs);
+    });
     var req = https.get(settings.resetUrl + '?sessionToken=' + encodeURIComponent(token), { timeout: settings.timeoutMs }, function(res) {
         var body = '';
         res.setEncoding('utf8');
         res.on('data', function(part) { body += part; });
         // The answer is logged by its outcome only, so the session token never reaches a log
-        res.on('end', function() { console.log('dev mode session', /"result"\s*:\s*"success"/.test(body) ? 'renewed' : 'not renewed (HTTP ' + res.statusCode + ')'); });
+        res.on('end', function() {
+            if (/"result"\s*:\s*"success"/.test(body)) return console.log('dev mode session renewed', attempt > 1 ? '(attempt ' + attempt + ')' : '');
+            retry('HTTP ' + res.statusCode);
+        });
+        res.on('error', function(err) { retry(err.code || err.message); });
     });
-    req.on('timeout', function() { req.destroy(); });
-    req.on('error', function(err) { console.warn('dev mode renewal failed', err.code || err.message); });
+    req.on('timeout', function() { req.destroy(new Error('timeout')); });
+    req.on('error', function(err) { retry(err.code || err.message); });
 }
 
 function seedServerSettings() {
