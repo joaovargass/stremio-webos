@@ -13,6 +13,7 @@
         "probeTimeoutMs": 10000,
         "recheckIntervalMs": 30000,
         "downAfterFailures": 3,
+        "idleTorrentMinutes": 20,
         "useLan": true,
         "discover": {
             "enabled": true,

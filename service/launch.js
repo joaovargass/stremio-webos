@@ -23,6 +23,7 @@ var HLS_PATH = /^\/hlsv2\//i;
 var INFO_HASH = /(?:^|\/|%2F)([0-9a-f]{40})(?=\/|%2F|$)/i;
 var routes = {};
 var seeded = {};
+var touched = {};
 var lastScan = 0;
 var readAhead = new ReadAhead(tweaks.readAhead || { enabled: false });
 var PROXY_LOOPBACK = /http(%3A|:)(%2F|\/)(%2F|\/)127\.0\.0\.1(%3A|:)8080/gi;
@@ -151,6 +152,7 @@ function warmTorrent(hash, server, query) {
     // Seed the peer sources, then read the configured bytes at the requested position of the file
     var bytes = (tweaks.prewarm || {}).warmBytes || 1048576;
     var filePath = '/' + hash + '/' + (parseInt(query.idx, 10) || 0);
+    touchTorrent(hash, server, null);
     var fraction = Math.min(Math.max(parseFloat(query.at) || 0, 0), 0.99);
     var log = function(total) { console.log('warmed', hash, 'at', Math.round(fraction * 100) + '%', 'on', server.host, total ? '' : '(no answer)'); };
     seedPeers(hash, server, function() {
@@ -365,9 +367,45 @@ function serveStatic(urlPath, res, next) {
     });
 }
 
+function touchTorrent(hash, server, res) {
+    // Remember when a torrent was last used on a server; an open video response keeps it in use until it closes
+    var key = hash + '@' + server.host;
+    var entry = touched[key] = touched[key] || { hash: hash, server: server, open: 0 };
+    entry.at = Date.now();
+    if (!res) return;
+    entry.open++;
+    var released = false;
+    var release = function() {
+        if (released) return;
+        released = true;
+        entry.open--;
+        entry.at = Date.now();
+    };
+    res.on('finish', release);
+    res.on('close', release);
+}
+
+function removeIdleTorrents() {
+    // A torrent nobody read for a while keeps dialing peers forever; through a carrier NAT that starves every new connection of the home
+    var limit = (tweaks.servers.idleTorrentMinutes || 0) * 60000;
+    if (!limit) return;
+    Object.keys(touched).forEach(function(key) {
+        var entry = touched[key];
+        if (entry.open > 0 || Date.now() - entry.at < limit) return;
+        delete touched[key];
+        delete seeded[key];
+        var req = http.get({ hostname: entry.server.hostname, port: entry.server.port, path: '/' + entry.hash + '/remove', timeout: 10000 }, function(res) { res.resume(); });
+        req.on('timeout', function() { req.destroy(); });
+        req.on('error', function() {});
+        console.log('removed idle torrent', entry.hash, 'on', entry.server.host);
+    });
+}
+
 function proxyToStreaming(req, res) {
     // Torrent files go through the RAM read-ahead window, everything else is proxied as is
     var source = sourceFor(req.url);
+    var hashMatch = INFO_HASH.exec(req.url);
+    if (hashMatch && STREAM_PATH.test(req.url)) touchTorrent(hashMatch[1].toLowerCase(), source, res);
     if (TORRENT_FILE_PATH.test(req.url)) {
         trackStream(res);
         // The first request of a torrent on a server creates it there with the configured peer sources
@@ -466,4 +504,5 @@ probe('http://127.0.0.1:11470/', function(running) {
     if (tweaks.servers.recheckIntervalMs) {
         setInterval(selectUpstream, tweaks.servers.recheckIntervalMs);
     }
+    setInterval(removeIdleTorrents, 60000);
 });
