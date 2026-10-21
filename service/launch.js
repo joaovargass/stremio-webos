@@ -3,6 +3,7 @@ require('module').Module._initPaths();
 process.env.APP_PATH = process.env.APP_PATH || __dirname;
 
 var dgram = require('dgram');
+var dns = require('dns');
 var http = require('http');
 var https = require('https');
 var fs = require('fs');
@@ -1071,19 +1072,47 @@ function renewDevMode(attempt) {
         console.warn('dev mode renewal failed', reason, again ? '(attempt ' + attempt + ', retrying in ' + Math.round(settings.retryMs / 1000) + ' s)' : '(attempt ' + attempt + ', giving up until the next renewal)');
         if (again) setTimeout(function() { renewDevMode(attempt + 1); }, settings.retryMs);
     });
-    var req = https.get(settings.resetUrl + '?sessionToken=' + encodeURIComponent(token), { timeout: settings.timeoutMs }, function(res) {
+    var target = url.parse(settings.resetUrl + '?sessionToken=' + encodeURIComponent(token));
+    // The LG host has several addresses and some never answer from a home network; each one is tried in turn, as a browser does
+    dns.lookup(target.hostname, { all: true }, function(err, addresses) {
+        if (err) return retry(err.code || err.message);
+        renewThrough(target, addresses, settings, attempt, retry);
+    });
+}
+
+function renewThrough(target, addresses, settings, attempt, retry) {
+    // Ask one address of the reset service; a connection that fails or stays silent moves on to the next address
+    if (!addresses.length) return retry('no address of ' + target.hostname + ' answered');
+    var address = addresses[0];
+    var moveOn = once(function(reason) {
+        console.warn('dev mode renewal: ' + address.address + ' did not answer (' + reason + '), trying the next address');
+        renewThrough(target, addresses.slice(1), settings, attempt, retry);
+    });
+    // Node asks a custom lookup for one address or, when it races address families, for a list
+    var lookup = function(host, opts, callback) {
+        if (opts && opts.all) return callback(null, [address]);
+        callback(null, address.address, address.family);
+    };
+    var options = Object.assign({}, target, { timeout: settings.answerTimeoutMs, lookup: lookup });
+    var req = https.get(options, function(res) {
         var body = '';
         res.setEncoding('utf8');
         res.on('data', function(part) { body += part; });
         // The answer is logged by its outcome only, so the session token never reaches a log
         res.on('end', function() {
-            if (/"result"\s*:\s*"success"/.test(body)) return console.log('dev mode session renewed', attempt > 1 ? '(attempt ' + attempt + ')' : '');
+            if (/"result"\s*:\s*"success"/.test(body)) return console.log('dev mode session renewed through ' + address.address + (attempt > 1 ? ' (attempt ' + attempt + ')' : ''));
             retry('HTTP ' + res.statusCode);
         });
         res.on('error', function(err) { retry(err.code || err.message); });
     });
-    req.on('timeout', function() { req.destroy(new Error('timeout')); });
-    req.on('error', function(err) { retry(err.code || err.message); });
+    // An address that never opens a connection is dropped quickly; once connected, the slow reset service gets the longer answer limit
+    req.on('socket', function(socket) {
+        var connectTimer = setTimeout(function() { req.destroy(new Error('no connection in ' + Math.round(settings.connectTimeoutMs / 1000) + ' s')); }, settings.connectTimeoutMs);
+        socket.once('connect', function() { clearTimeout(connectTimer); });
+        socket.once('close', function() { clearTimeout(connectTimer); });
+    });
+    req.on('timeout', function() { req.destroy(new Error('no answer in ' + Math.round(settings.answerTimeoutMs / 1000) + ' s')); });
+    req.on('error', function(err) { moveOn(err.code || err.message); });
 }
 
 function seedServerSettings() {

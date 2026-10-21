@@ -301,7 +301,8 @@
         "resetUrl": "https://developer.lge.com/secure/ResetDevModeSession.dev",
         "startDelayMs": 60000,
         "everyHours": 20,
-        "timeoutMs": 30000,
+        "connectTimeoutMs": 10000,
+        "answerTimeoutMs": 30000,
         "retryMs": 300000,
         "retries": 6
     }
