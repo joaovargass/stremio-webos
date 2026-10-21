@@ -28,10 +28,10 @@
             ['doctor.enabled', 'Monitorar a reprodução'],
             ['doctor.autoSwitch', 'Trocar de fonte sozinho quando falha'],
             ['stallRetry.enabled', 'Retomar quando o torrent trava'],
-            ['hlsFallback.enabled', 'Converter áudio ou vídeo incompatível (Mac)'],
+            ['hlsFallback.enabled', 'Converter áudio ou vídeo incompatível'],
             ['doctor.prewarmNext', 'Preparar a próxima fonte em segundo plano'],
             ['doctor.prewarmOnLan', 'Preparar no Mac quando ele já estiver em uso'],
-            ['doctor.convertFrozen', 'Converter no Mac quando a imagem trava com dados prontos']
+            ['doctor.convertFrozen', 'Converter quando a imagem trava com dados prontos']
         ] },
         { title: 'Legendas', column: 1, items: [
             ['subtitles.enabled', 'Central de legendas'],

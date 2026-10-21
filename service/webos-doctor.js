@@ -452,13 +452,13 @@
         } else if (loadingSince && (waitedMs > (config.startTimeoutMs || 60000) || (waitedMs > (config.quickStartMs || 20000) && race.best && race.videoId === currentVideoId()))) {
             remedy(video, hash, proxy, 'não começou');
         } else if (frozenWithData(video, hash, proxy, stalledMs)) {
-            // The data is on the server yet the picture does not move: the TV cannot decode this file, a remux on the Mac can
+            // The data is on the server yet the picture does not move: the TV pipeline cannot decode this file, a conversion can
             converted[hash] = true;
             calmUntil = now + calmFor();
             state.status = 'trocando';
             state.reason = 'imagem parada com dados prontos';
             console.warn('[doctor] frozen with data on the server, converting', hash);
-            window.__stremioConvert(video, 'A TV não conseguiu decodificar este trecho, convertendo no Mac...');
+            window.__stremioConvert(video, 'A TV não conseguiu decodificar este trecho, convertendo...');
         } else if (stalledMs > (config.stalledForMs || 45000) || choppy) {
             progress = [];
             remedy(video, hash, proxy, choppy ? 'vídeo travando' : 'vídeo travado');

@@ -151,7 +151,9 @@
         setText('limit', (info.limit ? mbps(info.limit) : '?') + ' / ' + cache);
         setText('learned', learnedText());
         var transcoder = proxy && proxy.transcoder;
-        setText('transcoder', transcoder ? transcoder.replace(/^https?:\/\//, '').replace(/\/$/, '') : 'indisponível (sem Mac)', transcoder ? 'good' : 'warn');
+        // The TV converts with its own ffmpeg; a LAN server only takes over to go faster
+        var tvConverts = transcoder && /127\.0\.0\.1|localhost/.test(transcoder);
+        setText('transcoder', transcoder ? transcoder.replace(/^https?:\/\//, '').replace(/\/$/, '') + (tvConverts ? ' (TV)' : ' (Mac)') : 'indisponível', transcoder ? 'good' : 'warn');
         var candidates = proxy && proxy.candidates ? Object.keys(proxy.candidates).map(function (key) {
             return key.replace(/^https?:\/\//, '').replace(/\/$/, '') + (proxy.candidates[key] ? ' ✓' : ' ✕');
         }).join('  ') : '-';
