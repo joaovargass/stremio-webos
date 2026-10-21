@@ -13,6 +13,7 @@ STAGE = /tmp/stremio-webos-package
 service/server.js:
 	@echo "==> Downloading Stremio server v$(SERVER_VERSION)..."
 	@curl -so $@ "https://dl.strem.io/server/v$(SERVER_VERSION)/webos/server.js"
+	@python3 tools/patch-webos-server.py $@
 
 # Small static ffmpeg and ffprobe built for the TV (about 18 MB together), see tools/build-ffmpeg.sh
 service/bin/ffmpeg service/bin/ffprobe:
