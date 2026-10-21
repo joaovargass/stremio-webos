@@ -177,6 +177,50 @@
     grid-column: 1 / -1;
 }
 
+/* Pointer (Magic Remote): the interactive panels and every close button take clicks; rows highlight under the cursor */
+
+.twk-sources.twk-visible,
+.twk-settings.twk-visible,
+.twk-visible .twk-close {
+    pointer-events: auto;
+}
+
+.twk-close {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 4.4vh;
+    height: 4.4vh;
+    margin-left: 1vw;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 2.2vh;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background-color 160ms ease;
+}
+
+.twk-close:hover {
+    background: #7b5bf5;
+    color: #ffffff;
+}
+
+.twk-src-row,
+.twk-set-row {
+    cursor: pointer;
+}
+
+.twk-src-row:hover,
+.twk-set-row:hover {
+    background: rgba(123, 91, 245, 0.12);
+}
+
+.twk-diag-header > .twk-chip {
+    margin-left: auto;
+}
+
 /* Source picker, sharing the diagnostics panel frame */
 
 .twk-sources {

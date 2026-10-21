@@ -83,6 +83,8 @@
         var header = panel.appendChild(element('div', 'twk-diag-header'));
         header.appendChild(element('div', 'twk-diag-title', 'Ajustes'));
         header.appendChild(element('div', 'twk-chip', '↑↓ ←→ OK'));
+        // The Magic Remote pointer closes the panel with this button, the remote with Back
+        header.appendChild(element('div', 'twk-close', '✕')).addEventListener('click', function (e) { e.stopPropagation(); hide(); });
         // Two real columns so Up and Down follow what the viewer sees, Left and Right switch columns
         [0, 1].forEach(function (column) {
             var holder = panel.appendChild(element('div', 'twk-set-column'));
@@ -94,6 +96,10 @@
                     row.appendChild(element('span', 'twk-set-label', item[1]));
                     var value = row.appendChild(element('span', 'twk-set-switch'));
                     rows.push({ key: item[0], row: row, value: value, on: current(item[0], item[2]), options: item[2], labels: item[3], column: column });
+                    // The pointer focuses a row by hovering and switches it with a click
+                    var index = rows.length - 1;
+                    row.addEventListener('mouseenter', function () { focus = index; paint(); });
+                    row.addEventListener('click', function (e) { e.stopPropagation(); focus = index; toggleFocused(); });
                 });
             });
         });

@@ -35,6 +35,8 @@
         var header = element('div', 'twk-diag-header');
         header.appendChild(element('div', 'twk-diag-title', 'Diagnóstico'));
         chip = header.appendChild(element('div', 'twk-chip', '...'));
+        // The Magic Remote pointer closes the panel with this button, the remote with Back
+        header.appendChild(element('div', 'twk-close', '✕')).addEventListener('click', function (e) { e.stopPropagation(); close(); });
         panel.appendChild(header);
         LAYOUT.forEach(function (section) {
             var box = panel.appendChild(element('div', 'twk-section'));

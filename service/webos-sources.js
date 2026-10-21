@@ -82,6 +82,8 @@
         var header = panel.appendChild(element('div', 'twk-diag-header'));
         header.appendChild(element('div', 'twk-diag-title', 'Trocar fonte'));
         header.appendChild(element('div', 'twk-chip', '↑↓ OK'));
+        // The Magic Remote pointer closes the panel with this button, the remote with Back
+        header.appendChild(element('div', 'twk-close', '✕')).addEventListener('click', function (e) { e.stopPropagation(); hide(); });
         list = panel.appendChild(element('div', 'twk-src-list'));
         document.body.appendChild(panel);
     }
@@ -96,6 +98,9 @@
         items.forEach(function (stream, i) {
             var info = describe(stream);
             var row = list.appendChild(element('div', 'twk-src-row'));
+            // The pointer focuses a row by hovering and plays it with a click
+            row.addEventListener('mouseenter', function () { focus = i; moveFocus(0); });
+            row.addEventListener('click', function (e) { e.stopPropagation(); focus = i; choose(); });
             row.appendChild(element('div', 'twk-src-title', (stream === current ? '▶ ' : '') + info.title));
             row.appendChild(element('div', 'twk-src-details', info.details));
         });
