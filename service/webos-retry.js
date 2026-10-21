@@ -81,14 +81,20 @@
         }, delayMs);
     }
 
-    function switchToHls(video, stream, resumeAt, message, force) {
-        // Replace a rejected source with an HLS remux from the streaming server, re-encoded when asked
+    function switchToHls(video, stream, resumeAt, message, force, rejected) {
+        // Replace a rejected source with an HLS remux from the streaming server, re-encoded when asked or when the probe shows a remux cannot help
         var currentSrc = video.getAttribute('src');
         var torrent = TORRENT_URL.exec(stream.url);
         var serverPromise = torrent ? Promise.resolve(torrent[1] + '/') : activeServer();
         showOverlay(message || 'Formato não suportado direto, convertendo no servidor...');
         serverPromise.then(function (server) {
-            if (!server) return;
+            if (!server || force || !rejected) return { server: server, force: force };
+            return probe(server, stream.url).then(function (info) { return { server: server, force: needsReencode(info) }; });
+        }).then(function (plan) {
+            var server = plan.server;
+            force = plan.force;
+            if (!server || video.getAttribute('src') !== currentSrc) return;
+            if (force) showOverlay('Vídeo incompatível com a TV, convertendo a imagem no servidor...');
             state.hlsUrl = buildHlsUrl(server, stream.url, force);
             state.forced = !!force;
             console.warn('[stall-retry] switching to HLS', force ? '(re-encoding the picture)' : '', state.hlsUrl);
@@ -118,13 +124,25 @@
         return !doctor || doctor.state.transcoder !== null;
     }
 
-    function probeHasAudio(server, mediaUrl) {
-        // Ask the streaming server whether the source carries any audio stream
+    function probe(server, mediaUrl) {
+        // The streams of a source as the streaming server's ffprobe sees them; ffprobe takes seconds, so it gets its own, longer limit
         var probeUrl = server.replace(/\/$/, '') + '/hlsv2/probe?mediaURL=' + encodeURIComponent(mediaUrl);
-        // ffprobe on the Mac takes seconds, so this probe gets its own, longer limit
-        return window.__stremioDoctor.fetchJson(probeUrl, hlsConfig.probeTimeoutMs).then(function (probe) {
-            return !!probe && (probe.streams || []).some(function (s) { return s.track === 'audio'; });
+        return window.__stremioDoctor.fetchJson(probeUrl, hlsConfig.probeTimeoutMs);
+    }
+
+    function probeHasAudio(server, mediaUrl) {
+        // Whether the source carries any audio stream
+        return probe(server, mediaUrl).then(function (info) {
+            return !!info && (info.streams || []).some(function (s) { return s.track === 'audio'; });
         });
+    }
+
+    function needsReencode(info) {
+        // Codecs the TV lists as playable that it still rejected mean a picture format it cannot decode (10-bit H.264, 4:2:2): a remux keeps it, so only a re-encode helps
+        var streams = (info && info.streams) || [];
+        var video = streams.filter(function (s) { return s.track === 'video'; })[0];
+        var audio = streams.filter(function (s) { return s.track === 'audio'; })[0];
+        return !!video && hlsConfig.videoCodecs.indexOf(video.codec) !== -1 && (!audio || hlsConfig.audioCodecs.indexOf(audio.codec) !== -1);
     }
 
     function checkMissingAudio(video) {
@@ -214,7 +232,7 @@
         }
         // A rejected format gets one HLS attempt before the error is shown
         if (hlsConfig.enabled && !onHls && !starved && canConvert()) {
-            switchToHls(video, stream, resumeAt);
+            switchToHls(video, stream, resumeAt, null, false, true);
             return true;
         }
         // A remux the TV rejected as well carries a picture format it cannot decode (10-bit H.264, for one): re-encode it once
