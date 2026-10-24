@@ -344,6 +344,19 @@
         });
     }
 
+    function quickPage(screen) {
+        // A page from the popular catalogs alone, shown at once while the personal page is being built
+        var types = screen === 'movie' || screen === 'series' ? [screen] : ['movie', 'series'];
+        return Promise.all(types.map(function (type) { return catalog(type, 'top', ''); })).then(function (lists) {
+            var entry = function (meta, i) { return { meta: meta, value: 1 - i / 10, base: 0 }; };
+            var rows = types.map(function (type, i) { return { key: 'top10:' + type, title: t('recs.top10.' + type), rank: true, items: lists[i].slice(0, 10).map(entry) }; });
+            var popular = [].concat.apply([], lists.map(function (list) { return list.slice(10, 30); }));
+            if (popular.length) rows.push({ key: 'popular', title: t('recs.popular'), items: popular.slice(0, config.rowLength || 20).map(entry) });
+            var billboard = [].concat.apply([], lists.map(function (list) { return list.slice(0, 6); })).filter(function (meta) { return meta.background && meta.trailer; }).slice(0, config.billboardTitles || 6);
+            return { billboard: billboard, rows: rows };
+        });
+    }
+
     function noteShown(ids) {
         // Count how often titles were shown, so ones never opened slowly give their place to others
         ids.forEach(function (id) { seen[id] = (seen[id] || 0) + 1; });
@@ -363,5 +376,5 @@
         });
     }
 
-    window.__twkRecs = { pageFor: pageFor, rankResults: rankResults, noteShown: noteShown, noteOpened: noteOpened, metaOf: metaOf, catalog: catalog, genreName: genreName, similarity: similarity, compact: compact };
+    window.__twkRecs = { pageFor: pageFor, quickPage: quickPage, rankResults: rankResults, noteShown: noteShown, noteOpened: noteOpened, metaOf: metaOf, catalog: catalog, genreName: genreName, similarity: similarity, compact: compact };
 })();

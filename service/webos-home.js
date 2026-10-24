@@ -44,12 +44,13 @@
         });
     }
 
-    function loadPage(name, params) {
+    function loadPage(name, params, quick) {
         // The page of a screen: title details, My List from the library, the others from the engine with Continue Watching on top
         if (name === 'details') return window.__twkDetails.load(params.type, params.id);
         if (name === 'mylist') return myListRows();
         var type = name === 'home' ? null : name;
-        return Promise.all([window.__twkRecs.pageFor(type || 'home'), continueRow(type)]).then(function (results) {
+        var recs = window.__twkRecs;
+        return Promise.all([quick ? recs.quickPage(type || 'home') : recs.pageFor(type || 'home'), continueRow(type)]).then(function (results) {
             var page = results[0];
             if (results[1]) page.rows.unshift(results[1]);
             return page;
@@ -82,20 +83,38 @@
         this.alive = true;
         this.build(container);
         var self = this;
-        loadPage(name, params).then(function (page) {
-            if (!self.alive) return;
-            self.page = page;
-            page.onButtons = function () { self.renderButtons(); self.paint(); };
-            self.renderButtons();
-            self.renderRows();
-            self.mode = page.billboard.length ? 'billboard' : 'rows';
-            self.showSlide(0);
-            self.paint();
+        var complete = false;
+        // Browsing screens show the popular rows at once; the personal page replaces them when it is ready
+        if (name !== 'details' && name !== 'mylist') {
+            loadPage(name, params, true).then(function (page) { if (self.alive && !complete) self.setPage(page); }).catch(function () {});
+        }
+        loadPage(name, params, false).then(function (page) {
+            complete = true;
+            if (self.alive) self.setPage(page);
         }).catch(function (error) {
             console.warn('[netflix] the', name, 'screen could not load its rows:', error && error.message || error);
-            self.status.textContent = t('netflix.loadFailed');
+            if (!self.page.rows.length) self.status.textContent = t('netflix.loadFailed');
         });
     }
+
+    Screen.prototype.setPage = function (page) {
+        // Draw a page, keeping the viewer's place when it replaces a quicker one
+        var self = this;
+        var first = !this.page.rows.length && !this.page.billboard.length;
+        this.page = page;
+        page.onButtons = function () { self.renderButtons(); self.paint(); };
+        this.renderButtons();
+        this.rowsBox.textContent = '';
+        this.renderRows();
+        // The rows changed, so positions inside them start over; the row the viewer was on stays
+        this.cols = {};
+        this.row = Math.min(this.row, Math.max(0, page.rows.length - 1));
+        if (first || this.mode === 'billboard' || !page.rows.length) {
+            this.mode = page.billboard.length ? 'billboard' : 'rows';
+            this.showSlide(first ? 0 : Math.min(this.slide, page.billboard.length - 1));
+        }
+        this.paint();
+    };
 
     Screen.prototype.build = function (container) {
         // The hero area (art, trailer, title, buttons) and the rows under it, built once per screen
