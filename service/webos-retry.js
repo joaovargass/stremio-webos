@@ -11,8 +11,40 @@
     var t = window.__twkI18n.t;
     var retryConfig = config.stallRetry || { maxRetries: 10, retryDelayMs: 3000 };
     var hlsConfig = config.hlsFallback || { enabled: false };
-    var state = { url: null, retries: 0, hlsUrl: null, forced: false };
+    var state = { url: null, retries: 0, hlsUrl: null, forced: false, attempt: 0, retryTimer: null };
+    var playerActive = shared.onPlayer();
+    var playerVideoId = currentVideoId();
     var statusNotice = null;
+
+    function currentVideoId() {
+        // The video a player route shows, its last path part
+        var parts = (location.hash || '').split('/');
+        return parts[parts.length - 1] || location.hash;
+    }
+
+    function isCurrentAttempt(video, src, attempt) {
+        // A timer or reply of an earlier attempt, another video or another source must not act anymore
+        return state.attempt === attempt && playerVideoId === currentVideoId() && video.isConnected && shared.onPlayer() && video.getAttribute('src') === src;
+    }
+
+    function invalidateAttempt() {
+        // Start a new attempt: pending retry timers and replies of the previous one are dropped
+        state.attempt++;
+        if (state.retryTimer !== null) clearTimeout(state.retryTimer);
+        state.retryTimer = null;
+    }
+
+    function requestPlay(video, src, attempt) {
+        // Ask to play; a cancelled request is routine, a refused one is told to the viewer
+        Promise.resolve().then(function () { return video.play(); }).catch(function (error) {
+            if (!isCurrentAttempt(video, src, attempt)) return;
+            if (error && error.name === 'AbortError') return console.info('[stall-retry] a play request was cancelled by a newer one');
+            // A source with no playable data yet also fails the media element, whose error handler retries or converts it
+            if (error && error.name === 'NotSupportedError') return console.info('[stall-retry] play waits for data the source has not delivered yet');
+            console.warn('[stall-retry] the player refused to play:', error && error.message || 'unknown error');
+            showOverlay(t('retry.playFailed'));
+        });
+    }
 
     function showOverlay(text) {
         // Recovery status stays in the shared toast until playback resumes
@@ -61,59 +93,77 @@
         return server.replace(/\/$/, '') + '/hlsv2/' + randomId() + '/master.m3u8?' + params.toString();
     }
 
-    function reload(video, url, resumeAt, expectedSrc, delayMs) {
+    function reload(video, url, resumeAt, expectedSrc, delayMs, trackRetry) {
         // Load a URL into the element and seek back once metadata is known
-        setTimeout(function () {
+        var attempt = state.attempt;
+        var timer = setTimeout(function () {
+            if (trackRetry && state.retryTimer === timer) state.retryTimer = null;
             // Skip the reload when the player was unloaded or moved on meanwhile
-            if (!video.isConnected || video.getAttribute('src') !== expectedSrc) return;
+            if (!isCurrentAttempt(video, expectedSrc, attempt)) return;
             // The player seeks to this position itself when the new source reports its metadata
             video.__twkResumeMs = Math.max(0, Math.round((resumeAt || 0) * 1000));
             video.src = url;
-            try { video.load(); } catch (_e) {}
-            try { video.play(); } catch (_e) {}
+            try { video.load(); } catch (error) {
+                console.warn('[stall-retry] the player could not load the source:', error && error.message || 'unknown error');
+                return showOverlay(t('retry.playFailed'));
+            }
+            requestPlay(video, url, attempt);
         }, delayMs);
+        if (trackRetry) state.retryTimer = timer;
     }
 
     function switchToHls(video, stream, resumeAt, message, force, rejected) {
         // Replace a rejected source with an HLS remux from the streaming server, re-encoded when asked or when the probe shows a remux cannot help
         var currentSrc = video.getAttribute('src');
+        var attempt = state.attempt;
         var torrent = shared.torrentOf(stream.url);
         var serverPromise = torrent ? Promise.resolve(torrent[1] + '/') : activeServer();
         showOverlay(message || t('retry.unsupported'));
         serverPromise.then(function (server) {
+            if (!isCurrentAttempt(video, currentSrc, attempt)) return null;
             if (!server || force || !rejected) return { server: server, force: force };
             return probe(server, stream.url).then(function (info) { return { server: server, force: needsReencode(info) }; });
         }).then(function (plan) {
-            var server = plan.server;
+            if (!plan || !plan.server || !isCurrentAttempt(video, currentSrc, attempt)) return;
             force = plan.force;
-            if (!server || video.getAttribute('src') !== currentSrc) return;
             if (force) showOverlay(t('retry.convertVideo'));
-            state.hlsUrl = buildHlsUrl(server, stream.url, force);
+            state.hlsUrl = buildHlsUrl(plan.server, stream.url, force);
             state.forced = !!force;
             console.warn('[stall-retry] switching to HLS', force ? '(re-encoding the picture)' : '', state.hlsUrl);
             reload(video, state.hlsUrl, resumeAt, currentSrc, 0);
             confirmSwitch(video, state.hlsUrl, resumeAt);
+        }).catch(function (error) {
+            if (!isCurrentAttempt(video, currentSrc, attempt)) return;
+            console.error('[stall-retry] the conversion could not start:', error && error.message || 'unknown error');
+            hideOverlay();
         });
     }
 
     function confirmSwitch(video, url, resumeAt) {
         // The TV pipeline can ignore a new source while the old one plays; one more load makes the conversion take over
+        var attempt = state.attempt;
         setTimeout(function () {
-            if (!video.isConnected || video.getAttribute('src') !== url || video.currentSrc === url) return;
+            if (!isCurrentAttempt(video, url, attempt) || video.currentSrc === url) return;
             console.warn('[stall-retry] the player kept the previous source after the switch, loading the conversion again');
             video.__twkResumeMs = Math.max(0, Math.round((resumeAt || 0) * 1000));
-            try { video.load(); } catch (_e) {}
-            try { video.play(); } catch (_e) {}
+            try { video.load(); } catch (error) {
+                console.warn('[stall-retry] the player could not load the conversion:', error && error.message || 'unknown error');
+                return showOverlay(t('retry.playFailed'));
+            }
+            requestPlay(video, url, attempt);
         }, hlsConfig.switchCheckMs || 3000);
     }
 
     function retryStalled(video, stream, match, resumeAt) {
-        // Reload a starved torrent at the same position and show swarm state
-        var attempt = state.retries;
+        // Schedule the reload of a starved torrent at the same position first, then show the swarm state when it arrives
+        var count = state.retries;
+        var attempt = state.attempt;
         var currentSrc = video.getAttribute('src');
+        showOverlay(t('retry.waiting'));
+        reload(video, currentSrc, resumeAt, currentSrc, retryConfig.retryDelayMs, true);
         fetchStats(match).then(function (stats) {
-            showOverlay(describe(stats) + ((config.simple || {}).enabled ? '' : t('retry.attempt', { current: attempt, total: retryConfig.maxRetries })));
-            reload(video, currentSrc, resumeAt, currentSrc, retryConfig.retryDelayMs);
+            if (!isCurrentAttempt(video, currentSrc, attempt)) return;
+            showOverlay(describe(stats) + ((config.simple || {}).enabled ? '' : t('retry.attempt', { current: count, total: retryConfig.maxRetries })));
         });
     }
 
@@ -189,8 +239,21 @@
     }, true);
 
     function onRouteChange() {
-        // Leaving the player route hides any pending status box
-        if (!shared.onPlayer()) hideOverlay();
+        // Opening the player for a video starts a fresh attempt and budget; leaving it drops pending retries and the status box
+        var active = shared.onPlayer();
+        var videoId = currentVideoId();
+        if (active && (!playerActive || playerVideoId !== videoId)) {
+            invalidateAttempt();
+            state.retries = 0;
+            state.url = null;
+            state.hlsUrl = null;
+            state.forced = false;
+        } else if (!active && playerActive) {
+            invalidateAttempt();
+        }
+        playerActive = active;
+        playerVideoId = videoId;
+        if (!active) hideOverlay();
     }
 
     // The app router navigates with pushState and announces it as historyChange
@@ -198,14 +261,22 @@
     window.addEventListener('historyChange', onRouteChange);
 
     window.__stremioRetryState = state;
+    window.__stremioInvalidateRetryAttempt = function () {
+        // A source switch by the doctor ends every pending recovery of the previous source
+        invalidateAttempt();
+        hideOverlay();
+    };
 
     window.__stremioConvert = function (video, message) {
         // Convert the playing source to HLS on the server, for a picture that froze although its data is already there
         var src = video.getAttribute('src');
         if (!hlsConfig.enabled || !src || src === state.hlsUrl) return false;
         if (state.url !== src) {
+            invalidateAttempt();
             state.url = src;
             state.retries = 0;
+            state.hlsUrl = null;
+            state.forced = false;
         }
         switchToHls(video, { url: src }, video.__lastTime || video.currentTime || 0, message || t('retry.convertFrozen'));
         return true;
@@ -215,6 +286,7 @@
         if (!stream || typeof stream.url !== 'string') return false;
         // Reset the budget when a different stream starts failing
         if (state.url !== stream.url) {
+            invalidateAttempt();
             state.url = stream.url;
             state.retries = 0;
             state.hlsUrl = null;
@@ -230,6 +302,8 @@
         console.warn('[stall-retry] code', code, 'ready', video.readyState, 'hls', onHls, 'resumeAt', resumeAt, stream.url);
         // A starved torrent is retried as is, also when already on HLS
         if (starved && retryConfig.enabled !== false && state.retries < retryConfig.maxRetries) {
+            // An error repeated while a reload is already scheduled is the same stall, not a new attempt
+            if (state.retryTimer !== null) return true;
             state.retries++;
             retryStalled(video, stream, match, resumeAt);
             return true;
