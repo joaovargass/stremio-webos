@@ -432,13 +432,13 @@
     }
 
     function reloadInPlace(video) {
-        // Ask the player for the same URL again; the proxy now serves it from another server
-        var resumeAt = video.__lastTime || video.currentTime || 0;
-        // The player seeks to this position itself when the same URL reports its metadata again
-        video.__twkResumeMs = Math.max(0, Math.round((resumeAt || 0) * 1000));
+        // Ask for the same URL again, served now by another server; before its metadata the position it opened with still applies
+        if (video.readyState >= 1) video.__twkResumeMs = Math.round((video.__lastTime || video.currentTime || 0) * 1000);
         video.src = video.getAttribute('src');
         try { video.load(); } catch (_e) {}
-        try { video.play(); } catch (_e) {}
+        // The reload itself interrupts any earlier play request; only another refusal is worth a line
+        var playing = video.play();
+        if (playing && playing.catch) playing.catch(function (error) { if (error.name !== 'AbortError') console.warn('[doctor] play after the reload was refused:', error.name); });
     }
 
     function useRemoteServer(video, hash, proxy, reason) {
