@@ -10,15 +10,20 @@ var http = require('http');
 var EventEmitter = require('events');
 
 var MB = 1024 * 1024;
+var MEMORY_READ_MS = 1000;
+var memory = { at: 0, bytes: Infinity };
 
 function availableBytes() {
-    // MemAvailable reflects reclaimable cache, unlike os.freemem() on Node 16
+    // MemAvailable reflects reclaimable cache, unlike os.freemem() on Node 16; read at most once a second, since every downloaded chunk asks
+    if (Date.now() - memory.at < MEMORY_READ_MS) return memory.bytes;
+    memory.at = Date.now();
     try {
         var match = /MemAvailable:\s+(\d+)\s+kB/.exec(fs.readFileSync('/proc/meminfo', 'utf8'));
-        return match ? parseInt(match[1], 10) * 1024 : Infinity;
+        memory.bytes = match ? parseInt(match[1], 10) * 1024 : Infinity;
     } catch (_) {
-        return Infinity;
+        memory.bytes = Infinity;
     }
+    return memory.bytes;
 }
 
 function parseRange(header) {
