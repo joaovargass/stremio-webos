@@ -61,7 +61,7 @@ ReadAhead.prototype.status = function() {
         start: b.start,
         end: b.end,
         readerPos: reader,
-        aheadBytes: reader === null ? 0 : Math.max(0, b.end - reader),
+        aheadBytes: b.aheadOfPlayer(),
         readers: b.readers.length,
         heldBytes: b.heldBytes(),
         mirrorBytes: b.mirrorBytes,
@@ -125,6 +125,7 @@ function Window(owner, req, upstream, start) {
     this.segments = [];
     this.helpers = {};
     this.mirrorBytes = 0;
+    this.lastReadPos = null;
     this.open(upstream, start);
     // Other torrents of the same file download later parts of it in parallel while the main read goes on
     var self = this;
@@ -312,6 +313,13 @@ Window.prototype.aheadBytes = function() {
     return this.end - (pos === null ? this.start : pos);
 };
 
+Window.prototype.aheadOfPlayer = function() {
+    // Bytes held past where the player reads now, or where it last stopped between its range requests
+    var pos = this.minReaderPos();
+    if (pos === null) pos = this.lastReadPos === null ? this.start : this.lastReadPos;
+    return Math.max(0, this.end - pos);
+};
+
 Window.prototype.heldBytes = function() {
     // Everything kept in memory ahead of the slowest reader, mirror parts included
     return this.aheadBytes() + this.segmentBytes();
@@ -377,6 +385,7 @@ Window.prototype.serve = function(res, reader) {
     var finish = function() {
         if (finished) return;
         finished = true;
+        self.lastReadPos = reader.pos;
         self.removeListener('data', pump);
         self.readers = self.readers.filter(function(r) { return r !== reader; });
         self.maybeResume();
