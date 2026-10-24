@@ -8,7 +8,7 @@
     var t = window.__twkI18n.t;
     var prewarmed = {};
     var lastRanking = null;
-    var live = { forId: null, candidates: [], since: {}, stats: {}, classes: {}, busy: {}, version: 0, timer: null, started: 0 };
+    var live = { forId: null, candidates: [], classes: {}, version: 0, generation: 0, timer: null, started: 0 };
     var NOTICE = /reinstall|re-install|configure (this|the) addon|install the addon|not configured|expired|invalid (api )?key|update (this|the) addon/i;
     var rules = compileRules(config.ranking);
 
@@ -62,16 +62,7 @@
 
     function liveKey(stream) {
         // A torrent file as the streaming server names it
-        return stream && stream.infoHash ? stream.infoHash.toLowerCase() + '/' + (stream.fileIdx || 0) : null;
-    }
-
-    function liveClass(entry, key) {
-        // Turn a measurement into a class, so the ranking changes only when a source really moves up or down
-        var settings = config.liveTest || {};
-        var elapsed = Date.now() - (live.since[key] || live.started);
-        if (!entry.peers) return elapsed > (settings.deadAfterMs || 12000) ? 'dead' : 'waiting';
-        if (elapsed < (settings.judgeAfterMs || 6000)) return 'waiting';
-        return entry.ratio >= 1.5 ? 'fast' : entry.ratio >= 1 ? 'ok' : entry.ratio >= 0.5 ? 'slow' : 'tooSlow';
+        return window.__twkEvidence.key(stream);
     }
 
     function testSources(rankedFor, ranked, force) {
@@ -83,12 +74,9 @@
         if (!force && live.forId === rankedFor) return addCandidates(wanted);
         stopTesting();
         live.forId = rankedFor;
-        live.started = Date.now();
         // Only a reset of earlier measurements changes the ranking; a first test starts from the same order
         if (Object.keys(live.classes).length) live.version++;
-        live.stats = {};
         live.classes = {};
-        live.since = {};
         live.candidates = [];
         addCandidates(wanted);
     }
@@ -100,16 +88,15 @@
         var fresh = wanted.filter(function (s) { return known.indexOf(liveKey(s)) === -1; }).slice(0, Math.max(0, (settings.maxTested || 6) - live.candidates.length));
         if (!fresh.length) return;
         live.candidates = live.candidates.concat(fresh);
-        fresh.forEach(function (s) { live.since[liveKey(s)] = Date.now(); });
         console.info('[tweaks] testing sources', fresh.map(function (s) { return summary(s, true) || s.infoHash; }).join(' | '));
         fresh.forEach(function (s) { prewarm(s, 0, startsOnLan(s)); });
-        // Each new source gets a full window to be judged
+        // The test lasts a full window after the newest candidate joined, so every one gets a sustained measurement
         live.started = Date.now();
         if (!live.timer) live.timer = setInterval(measure, settings.everyMs || 2000);
     }
 
     function releaseCandidates() {
-        // Once the test is over only the recommended source stays started; the others stop using the home connection now
+        // Once the test is over only the recommended source stays started; proven dead ones were dropped already
         var keep = liveKey((window.__stremioRankedStreams || [])[0]);
         live.candidates.forEach(function (s) {
             if (liveKey(s) !== keep && live.classes[liveKey(s)] !== 'dead') fetch('/__tweaks/forget?hash=' + s.infoHash.toLowerCase()).catch(function () {});
@@ -117,49 +104,55 @@
     }
 
     function stopTesting() {
-        // End the measuring loop; the last numbers stay for the ranking and the picker
+        // End the measuring loop; replies still on their way belong to the ended test and are ignored
         if (live.timer) clearInterval(live.timer);
         live.timer = null;
+        live.generation++;
+    }
+
+    function verdictText(result) {
+        // One readable line of what a source delivered: verdict, sustained speed against its bitrate, peers
+        var entry = result.entry || {};
+        var how = result.delivered ? ' while reading its test bytes' : ' sustained';
+        var speed = result.speed !== undefined ? ', ' + (result.speed / 1048576).toFixed(2) + ' MB/s' + how + ' (' + result.ratio.toFixed(1) + 'x its bitrate)' : '';
+        return result.verdict + speed + ', ' + (entry.peers || 0) + ' peers connected, ' + (entry.found || 0) + ' found';
     }
 
     function measure() {
-        // Read peers and speed of each candidate against its bitrate, one request per source at a time
+        // Sample every candidate; a changed verdict re-ranks the title and a proven dead source stops dialing at once
         var settings = config.liveTest || {};
-        if (Date.now() - live.started > (settings.windowMs || 30000)) {
-            console.info('[tweaks] source test done', JSON.stringify(live.classes));
-            releaseCandidates();
+        if (Date.now() - live.started > (settings.windowMs || 90000)) {
+            console.info('[tweaks] source test done', live.candidates.map(function (s) { return (summary(s, true) || s.infoHash) + ': ' + (live.classes[liveKey(s)] || 'searching'); }).join(' | '));
+            // On the player the doctor uses the prepared sources as fallbacks, so they stay started
+            if (!shared.onPlayer()) releaseCandidates();
             return stopTesting();
         }
+        var generation = live.generation;
         live.candidates.forEach(function (s) {
-            var key = liveKey(s);
-            if (live.busy[key]) return;
-            live.busy[key] = true;
-            shared.fetchJson('/' + key + '/stats.json').then(function (st) {
-                live.busy[key] = false;
-                if (!st) return;
-                var needed = window.__stremioStreamBitrate[s.infoHash] || 1048576;
-                var entry = { speed: st.downloadSpeed || 0, peers: st.peers || 0, ratio: (st.downloadSpeed || 0) / needed };
-                live.stats[key] = entry;
-                var cls = liveClass(entry, key);
+            window.__twkEvidence.sample(s).then(function () {
+                if (generation !== live.generation) return;
+                var result = window.__twkEvidence.assess(s);
+                var key = liveKey(s);
+                var cls = result.verdict === 'unknown' ? 'searching' : result.verdict;
                 if (cls === live.classes[key]) return;
                 live.classes[key] = cls;
                 live.version++;
-                // A source without peers is dropped at once, so dead torrents do not keep dialing through the home connection
                 if (cls === 'dead') fetch('/__tweaks/forget?hash=' + s.infoHash.toLowerCase()).catch(function () {});
-                console.info('[tweaks] source', summary(s, true) || key, cls, Math.round(entry.speed / 1024) + ' KB/s,', entry.peers, 'peers');
+                console.info('[tweaks] source', (summary(s, true) || key) + ':', verdictText(result));
             });
         });
     }
 
     function liveLabel(stream) {
         // Short line with what the background test measured for a source
-        var key = liveKey(stream);
-        var entry = live.stats[key];
-        var cls = live.classes[key];
-        if (!entry || !cls) return '';
+        var cls = live.classes[liveKey(stream)];
+        if (!cls) return '';
         if (cls === 'dead') return t('enhance.live.none');
-        var speed = window.__twkI18n.number(entry.speed / 1048576, 1) + ' MB/s';
-        return cls === 'waiting' ? t('enhance.live.testing', { speed: speed }) : t('enhance.live.tested', { speed: speed, peers: entry.peers });
+        var result = window.__twkEvidence.assess(stream);
+        var peers = result.entry ? result.entry.peers : 0;
+        if (cls === 'searching') return t('enhance.live.searching');
+        if (result.speed === undefined) return t('enhance.live.starting', { peers: peers });
+        return t('enhance.live.tested', { speed: window.__twkI18n.number(result.speed / 1048576, 1) + ' MB/s', peers: peers });
     }
 
     function streamText(stream) {

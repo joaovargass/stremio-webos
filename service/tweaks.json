@@ -238,9 +238,7 @@
         "candidates": 3,
         "maxTested": 6,
         "everyMs": 2000,
-        "windowMs": 30000,
-        "judgeAfterMs": 6000,
-        "deadAfterMs": 12000,
+        "windowMs": 90000,
         "scores": {
             "fast": 30,
             "ok": 15,
