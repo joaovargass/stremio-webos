@@ -15,6 +15,11 @@
     var WIDTHS = ['narrow', 'wide', 'full'];
     var POSITIONS = ['bottomLeft', 'topLeft', 'topRight', 'bottomRight'];
     var GROUPS = [
+        { title: 'settings.netflix', column: 0, items: [
+            ['netflix.enabled'],
+            ['netflix.trailers'],
+            ['netflix.trailerSound']
+        ] },
         { title: 'settings.simple', column: 0, items: [
             ['simple.enabled'],
             ['simple.quality', QUALITY, 'quality'],

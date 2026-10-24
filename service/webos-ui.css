@@ -108,6 +108,49 @@
     /* Layers */
     --twk-z-panel: 2147483647;
     --twk-z-debug: 2147483646;
+    --twk-z-layer: 2147483640;
+
+    /* Netflix-like layer */
+    --twk-nf-bg: #000000;
+    --twk-nf-menu: 5vw;
+    --twk-nf-menu-open: 20vw;
+    --twk-nf-icon: 2.4vw;
+    --twk-nf-pad: 4vw;
+    --twk-nf-info-top: 16vh;
+    --twk-nf-info-top-browsing: 7vh;
+    --twk-nf-info-width: 42vw;
+    --twk-nf-logo-h: 18vh;
+    --twk-nf-logo-h-browsing: 11vh;
+    --twk-nf-logo-w: 34vw;
+    --twk-nf-title: 6vh;
+    --twk-nf-rows-top: 76vh;
+    --twk-nf-rows-top-browsing: 48vh;
+    --twk-nf-tile-w: 16vw;
+    --twk-nf-tile-h: 9vw;
+    --twk-nf-tile-gap: 1vw;
+    --twk-nf-tile-step: calc(var(--twk-nf-tile-w) + var(--twk-nf-tile-gap));
+    --twk-nf-row-step: calc(var(--twk-nf-tile-h) + 7vh);
+    --twk-nf-focus-scale: 1.1;
+    --twk-nf-focus-ring: 0.3vw;
+    --twk-nf-rank: 13vh;
+    --twk-nf-progress: 0.5vh;
+    --twk-nf-progress-color: #e50914;
+    --twk-nf-button-light: #ffffff;
+    --twk-nf-button-light-text: #000000;
+    --twk-nf-button-dim: rgba(109, 109, 110, 0.7);
+    --twk-nf-shade-side: linear-gradient(90deg, rgba(0, 0, 0, 0.92) 0%, rgba(0, 0, 0, 0.55) 38%, rgba(0, 0, 0, 0) 70%);
+    --twk-nf-shade-bottom: linear-gradient(0deg, #000000 0%, rgba(0, 0, 0, 0.6) 22%, rgba(0, 0, 0, 0) 45%);
+    --twk-nf-menu-shade: linear-gradient(90deg, rgba(0, 0, 0, 0.95) 0%, rgba(0, 0, 0, 0.8) 70%, rgba(0, 0, 0, 0) 100%);
+    --twk-nf-move: 240ms;
+    --twk-nf-dot-w: 1vw;
+    --twk-nf-synopsis-line: 1.4;
+    --twk-nf-name-shadow: 0 0.2vh 0.6vh rgba(0, 0, 0, 0.9);
+    --twk-nf-rank-drop: -2vh;
+    --twk-nf-rank-stroke: 0.25vh;
+    --twk-nf-rank-art: 45%;
+    --twk-nf-trailer-top: -12%;
+    --twk-nf-trailer-height: 124%;
+    --twk-nf-status-bottom: 6vh;
 }
 
 /* Tones: text colour everywhere; tags and bars add their tone background */
@@ -719,4 +762,340 @@ html[data-twk-top]:not([data-twk-top=""]) .twk-debug {
     color: var(--twk-text) !important;
     background-color: transparent !important;
     text-shadow: var(--twk-subtitle-shadow) !important;
+}
+
+/* Netflix-like layer over the Home, Series, Movies and My List routes; the Stremio screen under it is hidden */
+
+.twk-nf {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: var(--twk-nf-bg);
+    color: var(--twk-text);
+    font-family: var(--twk-font);
+    z-index: var(--twk-z-layer);
+    overflow: hidden;
+}
+
+html[data-twk-netflix="on"] .twk-nf {
+    display: block;
+}
+
+html[data-twk-netflix="on"] #root {
+    visibility: hidden;
+}
+
+/* Left menu: icons only, expanded with labels while it has the focus */
+.twk-nf-menu {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: var(--twk-nf-menu);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: var(--twk-space-l);
+    padding-left: var(--twk-inset-m);
+    z-index: 2;
+    transition: width var(--twk-nf-move) var(--twk-ease);
+}
+
+.twk-nf-menu-open .twk-nf-menu {
+    width: var(--twk-nf-menu-open);
+    background: var(--twk-nf-menu-shade);
+}
+
+.twk-nf-menu-item {
+    display: flex;
+    align-items: center;
+    gap: var(--twk-inset-m);
+    color: var(--twk-faint);
+    font-size: var(--twk-text-xl);
+    white-space: nowrap;
+}
+
+.twk-nf-icon {
+    flex: none;
+    width: var(--twk-nf-icon);
+    height: var(--twk-nf-icon);
+    fill: currentColor;
+}
+
+.twk-nf-menu-label {
+    opacity: 0;
+    transition: opacity var(--twk-fade) ease;
+}
+
+.twk-nf-menu-open .twk-nf-menu-label {
+    opacity: 1;
+}
+
+.twk-nf-menu-item.twk-nf-current {
+    color: var(--twk-text-soft);
+}
+
+.twk-nf-menu-item.twk-focus {
+    color: var(--twk-text);
+    font-weight: var(--twk-weight-bold);
+}
+
+.twk-nf-content {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: var(--twk-nf-menu);
+}
+
+.twk-nf-screen {
+    position: absolute;
+    inset: 0;
+}
+
+/* Hero: the billboard title, or the focused title while browsing the rows */
+.twk-nf-hero {
+    position: absolute;
+    inset: 0;
+}
+
+.twk-nf-art,
+.twk-nf-trailer {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center top;
+    transition: opacity var(--twk-slide) ease;
+}
+
+.twk-nf-trailer {
+    opacity: 0;
+    overflow: hidden;
+}
+
+.twk-nf-trailer.twk-visible {
+    opacity: 1;
+}
+
+.twk-nf-trailer iframe {
+    position: absolute;
+    top: var(--twk-nf-trailer-top);
+    left: 0;
+    width: 100%;
+    height: var(--twk-nf-trailer-height);
+    border: 0;
+    pointer-events: none;
+}
+
+.twk-nf-shade {
+    position: absolute;
+    inset: 0;
+    background: var(--twk-nf-shade-side), var(--twk-nf-shade-bottom);
+}
+
+.twk-nf-info {
+    position: absolute;
+    top: var(--twk-nf-info-top);
+    left: var(--twk-nf-pad);
+    width: var(--twk-nf-info-width);
+    transition: top var(--twk-nf-move) var(--twk-ease);
+}
+
+.twk-nf-browsing .twk-nf-info {
+    top: var(--twk-nf-info-top-browsing);
+}
+
+.twk-nf-logo {
+    display: block;
+    max-width: var(--twk-nf-logo-w);
+    max-height: var(--twk-nf-logo-h);
+    margin-bottom: var(--twk-space-l);
+    object-fit: contain;
+    object-position: left bottom;
+    transition: max-height var(--twk-nf-move) var(--twk-ease);
+}
+
+.twk-nf-browsing .twk-nf-logo {
+    max-height: var(--twk-nf-logo-h-browsing);
+}
+
+.twk-nf-title {
+    font-size: var(--twk-nf-title);
+    font-weight: var(--twk-weight-bold);
+    line-height: var(--twk-line-tight);
+}
+
+.twk-nf-line {
+    margin: var(--twk-space-m) 0;
+    color: var(--twk-text-soft);
+    font-size: var(--twk-text-l);
+    font-weight: var(--twk-weight-medium);
+    white-space: pre;
+}
+
+.twk-nf-synopsis {
+    color: var(--twk-text-soft);
+    font-size: var(--twk-text-l);
+    line-height: var(--twk-nf-synopsis-line);
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.twk-nf-buttons {
+    display: flex;
+    gap: var(--twk-inset-s);
+    margin-top: var(--twk-space-xl);
+}
+
+.twk-nf-browsing .twk-nf-buttons,
+.twk-nf-browsing .twk-nf-dots {
+    display: none;
+}
+
+.twk-nf-button {
+    padding: var(--twk-space-m) var(--twk-inset-m);
+    border-radius: var(--twk-radius-s);
+    background: var(--twk-nf-button-dim);
+    color: var(--twk-text);
+    font-size: var(--twk-text-xl);
+    font-weight: var(--twk-weight-bold);
+    transition: transform var(--twk-fast) var(--twk-ease);
+}
+
+.twk-nf-button.twk-focus {
+    background: var(--twk-nf-button-light);
+    color: var(--twk-nf-button-light-text);
+    transform: scale(var(--twk-nf-focus-scale));
+}
+
+.twk-nf-dots {
+    display: flex;
+    gap: var(--twk-inset-xs);
+    margin-top: var(--twk-space-l);
+}
+
+.twk-nf-dot {
+    width: var(--twk-nf-dot-w);
+    height: var(--twk-nf-progress);
+    border-radius: var(--twk-radius-pill);
+    background: var(--twk-faint);
+}
+
+.twk-nf-dot-on {
+    background: var(--twk-text);
+}
+
+.twk-nf-status {
+    position: absolute;
+    left: var(--twk-nf-pad);
+    bottom: var(--twk-nf-status-bottom);
+    color: var(--twk-muted);
+    font-size: var(--twk-text-xl);
+}
+
+/* Rows: the first one peeks under the billboard; while browsing, the focused row sits under the title area */
+.twk-nf-rows {
+    position: absolute;
+    top: var(--twk-nf-rows-top);
+    left: var(--twk-nf-pad);
+    right: 0;
+    transition: transform var(--twk-nf-move) var(--twk-ease), top var(--twk-nf-move) var(--twk-ease);
+}
+
+.twk-nf-browsing .twk-nf-rows {
+    top: var(--twk-nf-rows-top-browsing);
+}
+
+.twk-nf-row {
+    height: var(--twk-nf-row-step);
+}
+
+.twk-nf-row-title {
+    margin-bottom: var(--twk-space-m);
+    font-size: var(--twk-text-xl);
+    font-weight: var(--twk-weight-bold);
+}
+
+.twk-nf-track {
+    display: flex;
+    gap: var(--twk-nf-tile-gap);
+    transition: transform var(--twk-nf-move) var(--twk-ease);
+}
+
+.twk-nf-tile {
+    position: relative;
+    flex: none;
+    width: var(--twk-nf-tile-w);
+    height: var(--twk-nf-tile-h);
+    border-radius: var(--twk-radius-s);
+    transform-origin: left center;
+    transition: transform var(--twk-fast) var(--twk-ease);
+}
+
+.twk-nf-tile-art {
+    position: absolute;
+    inset: 0;
+    border-radius: var(--twk-radius-s);
+    background-color: var(--twk-surface-solid);
+    background-size: cover;
+    background-position: center;
+}
+
+.twk-nf-tile-name {
+    position: absolute;
+    left: var(--twk-inset-xs);
+    right: var(--twk-inset-xs);
+    bottom: var(--twk-space-m);
+    font-size: var(--twk-text-m);
+    font-weight: var(--twk-weight-bold);
+    text-shadow: var(--twk-nf-name-shadow);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.twk-nf-tile.twk-focus {
+    transform: scale(var(--twk-nf-focus-scale));
+    z-index: 1;
+}
+
+.twk-nf-tile.twk-focus .twk-nf-tile-art {
+    box-shadow: 0 0 0 var(--twk-nf-focus-ring) var(--twk-text), var(--twk-shadow-s);
+}
+
+/* Top 10: a large rank number beside a portrait poster */
+.twk-nf-row-rank .twk-nf-tile-art {
+    left: var(--twk-nf-rank-art);
+}
+
+.twk-nf-row-rank .twk-nf-tile-name {
+    display: none;
+}
+
+.twk-nf-rank {
+    position: absolute;
+    left: 0;
+    bottom: var(--twk-nf-rank-drop);
+    font-size: var(--twk-nf-rank);
+    font-weight: var(--twk-weight-bold);
+    line-height: 1;
+    color: var(--twk-nf-bg);
+    -webkit-text-stroke: var(--twk-nf-rank-stroke) var(--twk-muted);
+}
+
+/* Continue Watching progress */
+.twk-nf-progress {
+    position: absolute;
+    left: var(--twk-inset-xs);
+    right: var(--twk-inset-xs);
+    bottom: var(--twk-space-s);
+    height: var(--twk-nf-progress);
+    background: var(--twk-faint);
+}
+
+.twk-nf-progress-fill {
+    height: 100%;
+    background: var(--twk-nf-progress-color);
 }

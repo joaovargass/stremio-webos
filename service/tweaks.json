@@ -303,6 +303,16 @@
         "convertTimeoutMs": 20000,
         "convertMaxBytes": 4194304
     },
+    "netflix": {
+        "enabled": true,
+        "trailers": true,
+        "trailerSound": true,
+        "trailerDelayMs": 3000,
+        "trailerFadeMs": 1500,
+        "trailerMaxMs": 60000,
+        "slideMs": 15000,
+        "metaSettleMs": 200
+    },
     "recommendations": {
         "enabled": true,
         "cinemetaUrl": "https://v3-cinemeta.strem.io",
