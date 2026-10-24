@@ -62,7 +62,9 @@
     --twk-focus-ring: 0.25vh;
     --twk-control: 4.4vh;
     --twk-bar: 0.8vh;
-    --twk-pieces: 2.6vh;
+    --twk-pieces: 6vh;
+    --twk-pieces-names: 7vw;
+    --twk-marker: 0.25vw;
     --twk-dot: 1.4vh;
     --twk-toast-edge: 0.35vw;
     --twk-toast-width: 50vw;
@@ -354,11 +356,30 @@ html[data-twk-top="logview"] .twk-panel.twk-visible:not(.twk-logview) {
 .twk-bar-fill.twk-warn { background: var(--twk-warn); }
 .twk-bar-fill.twk-bad { background: var(--twk-bad); }
 
-/* File map: downloaded share above, peer availability below, painted on a canvas by webos-diag.js */
+/* File map: a wide section with lane names, the painted lanes (webos-diag.js) under a playhead marker, a time axis and a legend */
+.twk-section-wide {
+    grid-column: 1 / -1;
+}
+
 .twk-pieces {
+    display: grid;
+    grid-template-columns: var(--twk-pieces-names) minmax(0, 1fr);
+    column-gap: var(--twk-inset-s);
+    align-items: stretch;
+    margin-top: var(--twk-space-l);
+}
+
+.twk-pieces-names {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-around;
+    color: var(--twk-muted);
+    font-size: var(--twk-text-s);
+}
+
+.twk-pieces-track {
+    position: relative;
     height: var(--twk-pieces);
-    margin: var(--twk-space-s) 0 var(--twk-space-xs);
-    overflow: hidden;
     border-radius: var(--twk-radius-xs);
     background: var(--twk-line);
 }
@@ -367,12 +388,72 @@ html[data-twk-top="logview"] .twk-panel.twk-visible:not(.twk-logview) {
     display: block;
     width: 100%;
     height: 100%;
+    border-radius: var(--twk-radius-xs);
+}
+
+.twk-pieces-marker {
+    position: absolute;
+    top: calc(-1 * var(--twk-space-s));
+    bottom: calc(-1 * var(--twk-space-s));
+    left: 0;
+    width: var(--twk-marker);
+    border-radius: var(--twk-radius-pill);
+    background: var(--twk-text);
+    box-shadow: var(--twk-shadow-s);
+    transform: translateX(-50%);
+    transition: left var(--twk-fill) var(--twk-ease);
+}
+
+.twk-pieces-time {
+    position: absolute;
+    bottom: calc(100% + var(--twk-space-xs));
+    left: 50%;
+    padding: 0 var(--twk-inset-xs);
+    border-radius: var(--twk-radius-pill);
+    background: var(--twk-surface-raised);
+    color: var(--twk-text);
+    font-size: var(--twk-text-s);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    transform: translateX(-50%);
+}
+
+.twk-pieces-axis {
+    display: flex;
+    justify-content: space-between;
+    margin: var(--twk-space-s) 0 var(--twk-space-m) calc(var(--twk-pieces-names) + var(--twk-inset-s));
+    color: var(--twk-faint);
+    font-size: var(--twk-text-s);
+    font-variant-numeric: tabular-nums;
 }
 
 .twk-pieces-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--twk-space-s) var(--twk-inset-m);
+    margin-left: calc(var(--twk-pieces-names) + var(--twk-inset-s));
     color: var(--twk-muted);
-    font-size: var(--twk-text-xs);
+    font-size: var(--twk-text-s);
 }
+
+.twk-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--twk-inset-xs);
+}
+
+.twk-swatch {
+    width: var(--twk-dot);
+    height: var(--twk-dot);
+    border-radius: var(--twk-radius-xs);
+}
+
+.twk-swatch-done { background: var(--twk-accent); }
+.twk-swatch-many { background: var(--twk-good); }
+.twk-swatch-few { background: var(--twk-warn); }
+.twk-swatch-none { background: var(--twk-bad); }
+.twk-swatch-fetching { background: var(--twk-text-soft); height: calc(var(--twk-dot) / 3); }
+.twk-swatch-mark { width: var(--twk-marker); background: var(--twk-text); }
 
 /* Source picker and settings sizes */
 
