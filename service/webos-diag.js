@@ -236,8 +236,8 @@
         var total = doctor.totalBufferS !== undefined ? Math.max(doctor.totalBufferS, player) : player;
         setText('health', t('doctor.status.' + status), tone);
         var reasonParts = String(doctor.reason || '').split('|');
-        var reason = reasonParts[0] ? t('doctor.reason.' + reasonParts[0]) : '-';
-        if (reasonParts.indexOf('noSwitch') !== -1) reason += ', ' + t('doctor.reason.noSwitch');
+        // The first part is the symptom, the next ones say why nothing automatic happens about it
+        var reason = reasonParts[0] ? reasonParts.map(function (part) { return t('doctor.reason.' + part); }).join(', ') : '-';
         setText('reason', reason || '-');
         setText('total', t('diag.secondsOf', { value: total.toFixed(0), target: target }), total >= 30 ? 'good' : total >= 10 ? 'warn' : 'bad');
         setBar('totalBar', total / target, total >= 30 ? 'good' : total >= 10 ? 'warn' : 'bad');

@@ -188,6 +188,8 @@
         "quickStartMs": 12000,
         "raceAfterMs": 3000,
         "raceMinRatio": 0.8,
+        "startSwitchRatio": 0.25,
+        "startSwitchMargin": 2,
         "startGraceMs": 20000,
         "maxAutoSwitches": 1,
         "maxStartSwitches": 3,

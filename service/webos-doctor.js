@@ -13,7 +13,12 @@
     var onPlayer = shared.onPlayer;
     var t = window.__twkI18n.t;
     var HINT_KEY = 'twk.hint.v3';
-    var state = { status: 'ok', reason: '', totalBufferS: 0, playerBufferS: 0, ramBufferS: 0, speed: 0, needed: 0, switches: {}, exhausted: {}, tried: {}, started: {} };
+    var state = { status: 'ok', reason: '', totalBufferS: 0, playerBufferS: 0, ramBufferS: 0, speed: 0, needed: 0, switches: {}, exhausted: {}, blocked: {}, tried: {}, started: {} };
+    var UNPLAYABLE = ['tvCannotPlay'];
+    var manual = { busy: false, generation: 0 };
+    var lastCurrent = null;
+    var playerActive = onPlayer();
+    var playerVideoId = null;
     var stalledSince = null;
     var calmUntil = 0;
     var hintShown = false;
@@ -31,7 +36,7 @@
     var lastHash = null;
     var struggleSince = null;
     var progress = [];
-    var race = { videoId: null, list: [], best: null };
+    var race = { videoId: null, list: [] };
     var pendingResume = null;
     var rates = { tv: { key: 'twk.tvRate', savedAt: 0 }, lan: { key: 'twk.lanRate', savedAt: 0 } };
     rates.tv.value = shared.savedRate(rates.tv.key);
@@ -70,7 +75,8 @@
     function sameStream(a, b) {
         // Torrents compare by hash and file, direct links by URL
         if (!a || !b) return false;
-        if (a.infoHash || b.infoHash) return a.infoHash === b.infoHash && (a.fileIdx || 0) === (b.fileIdx || 0);
+        // The player address carries the hash in lower case, addons send either case
+        if (a.infoHash || b.infoHash) return String(a.infoHash).toLowerCase() === String(b.infoHash).toLowerCase() && (a.fileIdx || 0) === (b.fileIdx || 0);
         return a.url === b.url;
     }
 
@@ -103,52 +109,157 @@
         return list;
     }
 
-    function pickLive(list) {
-        // Among prepared torrents, the one that best sustains its own bitrate wins; direct links need no swarm; unknown keeps ranked order
-        return Promise.all(list.map(function (s) {
-            if (!s.infoHash) return Promise.resolve(Infinity);
-            var needed = (window.__stremioStreamBitrate || {})[s.infoHash] || 1048576;
-            return fetchJson('/' + s.infoHash + '/' + (s.fileIdx || 0) + '/stats.json').then(function (st) {
-                // A light source downloading at twice its bitrate beats a heavy one that is faster yet falls behind
-                return st ? (st.downloadSpeed || 0) / needed : 0;
-            });
-        })).then(function (scores) {
-            var best = 0;
-            scores.forEach(function (score, i) { if (score > scores[best]) best = i; });
-            return list[best] || null;
-        });
+    function evidenceValue(result) {
+        // Order candidates by what they delivered: sustained speed against their bitrate, then peers found, then nothing
+        if (result.verdict === 'direct') return 1;
+        if (result.ratio !== null) return result.ratio;
+        return result.verdict === 'starting' ? 0.01 : 0;
+    }
+
+    function startPick(best, now) {
+        // Before the first picture a switch interrupts nothing: a measured candidate far ahead of the current source wins
+        var evidence = window.__twkEvidence;
+        if (!evidence.measured(best.result.verdict) || best.result.ratio < (config.startSwitchRatio || 0.25)) return null;
+        if (evidence.measured(now.verdict) && best.result.ratio < now.ratio * (config.startSwitchMargin || 2)) return null;
+        return best.stream;
+    }
+
+    function choose(list, current, unplayable, beforePicture) {
+        // The candidate worth switching to, or null: one measured clearly better than the current source, any live one when the current cannot play or is proven dead
+        var evidence = window.__twkEvidence;
+        var now = current ? evidence.assess(current) : { verdict: 'unknown', ratio: null };
+        var best = list.map(function (s) { return { stream: s, result: evidence.assess(s) }; })
+            .filter(function (c) { return c.result.verdict !== 'dead'; })
+            .sort(function (a, b) { return evidenceValue(b.result) - evidenceValue(a.result); })[0];
+        if (!best) return null;
+        if (unplayable) return best.stream;
+        if (now.verdict === 'dead') return evidenceValue(best.result) > 0 ? best.stream : null;
+        var nowGood = evidence.measured(now.verdict) && now.ratio >= (config.raceMinRatio || 0.8);
+        if (best.result.verdict === 'direct') return nowGood ? null : best.stream;
+        if (beforePicture && !nowGood && startPick(best, now)) return best.stream;
+        if (!evidence.measured(best.result.verdict) || best.result.ratio < (config.raceMinRatio || 0.8)) return null;
+        // A switch costs a reload, so the new source must be clearly faster than a current one that already downloads
+        if (evidence.measured(now.verdict) && best.result.ratio < now.ratio * (config.switchMargin || 1.2)) return null;
+        return best.stream;
+    }
+
+    function evidenceLine(stream) {
+        // What the doctor based a decision on, for the log
+        var result = window.__twkEvidence.assess(stream);
+        var entry = result.entry || {};
+        return result.verdict + (result.ratio !== null && isFinite(result.ratio) ? ' ' + result.ratio.toFixed(2) + 'x bitrate' : '') + ', ' + (entry.peers || 0) + ' peers, ' + (entry.found || 0) + ' found';
     }
 
     function nextSource(reason, automatic) {
-        // Move to the best next source: the live one among those prepared in the background, else the next ranked
+        // A manual press plays the next ranked source; an automatic one switches only on evidence
+        return automatic ? autoSwitch(reason) : manualSwitch(reason);
+    }
+
+    function autoSwitch(reason) {
+        // Switch to a source the evidence shows is better, within the budget of this video; returns whether it switched
         var videoId = currentVideoId();
-        if (automatic) {
-            var used = state.switches[videoId] || 0;
-            // Before the first picture a switch disturbs nothing, so more attempts are allowed than during playback
-            var budget = state.started[videoId] ? (config.maxAutoSwitches || 0) : (config.maxStartSwitches || config.maxAutoSwitches || 0);
-            if (!config.autoSwitch) return false;
-            if (used >= budget) {
-                // Out of automatic attempts: tell the viewer once what can still help
-                if (!state.exhausted[videoId]) {
-                    state.exhausted[videoId] = true;
-                    explainExhausted(videoId);
-                }
-                return false;
-            }
-            state.switches[videoId] = used + 1;
+        if (config.autoSwitch === false) {
+            state.blocked[videoId] = 'autoSwitchDisabled';
+            return false;
         }
-        Promise.all([rankedStreams(), currentStream()]).then(function (results) {
-            var current = results[1];
-            var list = candidates(results[0] || [], current, automatic && prepared[videoId] ? (config.raceCandidates || 2) : 1);
-            if (!list.length) {
-                toast(t('doctor.noOtherSource'), 5000);
-                return null;
+        var used = state.switches[videoId] || 0;
+        // Before the first picture a switch disturbs nothing, so more attempts are allowed than during playback
+        var budget = state.started[videoId] ? (config.maxAutoSwitches || 0) : (config.maxStartSwitches || config.maxAutoSwitches || 0);
+        if (used >= budget) {
+            state.blocked[videoId] = 'noSwitch';
+            // Out of automatic attempts: tell the viewer once what can still help
+            if (!state.exhausted[videoId]) {
+                state.exhausted[videoId] = true;
+                explainExhausted(videoId);
             }
-            state.tried[videoId] = (state.tried[videoId] || []).concat(current ? [current] : []);
-            return (list.length > 1 ? pickLive(list) : Promise.resolve(list[0])).then(function (next) {
-                console.warn('[doctor] next source', automatic ? 'auto' : 'manual', reason, next.infoHash || next.url);
-                playStream(next, (automatic ? t('doctor.switchUnstable', { reason: reasonText(reason) }) + ' ' : '') + t('doctor.switch'));
-            });
+            return false;
+        }
+        var unplayable = UNPLAYABLE.indexOf(reason) !== -1;
+        var list = race.videoId === videoId ? race.list : [];
+        // A source the TV cannot play leaves even when nothing was prepared yet: the next ranked one is the best guess
+        if (unplayable && !list.length) return guessNext(reason, videoId);
+        var next = choose(list, lastCurrent, unplayable, !state.started[videoId]);
+        if (!next && noPeersAnywhere(list)) return playDirect(videoId, list.length + 1);
+        if (!next) {
+            state.blocked[videoId] = 'noBetterSource';
+            console.info('[doctor] keeping the current source:', reasonText(reason) + ';', 'current', lastCurrent ? evidenceLine(lastCurrent) : 'not a torrent', '| candidates', list.map(evidenceLine).join(' ; ') || 'none prepared');
+            return false;
+        }
+        state.switches[videoId] = used + 1;
+        state.tried[videoId] = (state.tried[videoId] || []).concat(lastCurrent ? [lastCurrent] : []);
+        console.warn('[doctor] switching source automatically:', reasonText(reason) + ';', 'new', next.infoHash || next.url, evidenceLine(next), '| current', lastCurrent ? evidenceLine(lastCurrent) : 'not a torrent');
+        playStream(next, t('doctor.switchUnstable', { reason: reasonText(reason) }) + ' ' + t('doctor.switch'));
+        return true;
+    }
+
+    function noPeersAnywhere(list) {
+        // The playing torrent and every prepared one found no peer at all: the network, not a swarm, is the likely cause
+        if (!lastCurrent || !list.length) return false;
+        return [lastCurrent].concat(list).every(function (s) {
+            var verdict = window.__twkEvidence.assess(s).verdict;
+            return verdict === 'searching' || verdict === 'dead';
+        });
+    }
+
+    function playDirect(videoId, tried) {
+        // A direct link plays without any swarm; without one, tell the viewer once that torrents do not connect here
+        var direct = (window.__stremioRankedStreams || []).filter(function (s) { return !s.infoHash && typeof s.url === 'string'; })[0];
+        if (!direct) {
+            state.blocked[videoId] = 'noBetterSource';
+            if (!state.exhausted[videoId]) toast(t('doctor.noPeersNetwork', { count: tried }), 12000);
+            state.exhausted[videoId] = true;
+            return false;
+        }
+        state.switches[videoId] = (state.switches[videoId] || 0) + 1;
+        console.warn('[doctor] no torrent of this title found a peer (' + tried + ' measured); playing a direct link', direct.url);
+        playStream(direct, t('doctor.noPeersDirect', { count: tried }));
+        return true;
+    }
+
+    function guessNext(reason, videoId) {
+        // No prepared source to compare: play the next ranked one, counted against the budget
+        state.switches[videoId] = (state.switches[videoId] || 0) + 1;
+        Promise.all([rankedStreams(), currentStream()]).then(function (results) {
+            if (videoId !== currentVideoId()) return;
+            var next = candidates(results[0] || [], results[1], 1)[0];
+            if (!next) return toast(t('doctor.noOtherSource'), 5000);
+            state.tried[videoId] = (state.tried[videoId] || []).concat(results[1] ? [results[1]] : []);
+            console.warn('[doctor] switching source automatically:', reasonText(reason) + ';', 'nothing was prepared, next ranked', next.infoHash || next.url);
+            playStream(next, t('doctor.switchUnstable', { reason: reasonText(reason) }) + ' ' + t('doctor.switch'));
+        });
+        return true;
+    }
+
+    function manualSwitch(reason) {
+        // The next ranked source after the playing one, one change at a time; a slow source list keeps the current source
+        if (manual.busy) return false;
+        manual.busy = true;
+        var videoId = currentVideoId();
+        var generation = ++manual.generation;
+        var release = function () { if (generation === manual.generation) manual.busy = false; };
+        var lookup = setTimeout(function () {
+            if (generation !== manual.generation) return;
+            manual.generation++;
+            manual.busy = false;
+            if (videoId !== currentVideoId() || !onPlayer()) return;
+            console.warn('[doctor] the source list did not load in time; the current source stays');
+            toast(t('doctor.sourceListUnavailable'), 5000);
+        }, (window.STREMIO_TWEAKS.sources || {}).loadWaitMs || 8000);
+        Promise.all([rankedStreams(), currentStream()]).then(function (results) {
+            // A reply for a video the viewer already left changes nothing
+            if (generation !== manual.generation || videoId !== currentVideoId()) return;
+            var next = candidates(results[0] || [], results[1], 1)[0];
+            if (!next) return toast(t('doctor.noOtherSource'), 5000);
+            state.tried[videoId] = (state.tried[videoId] || []).concat(results[1] ? [results[1]] : []);
+            console.warn('[doctor] switching source by request:', reason, next.infoHash || next.url);
+            playStream(next, t('doctor.switch'));
+        }).catch(function (error) {
+            if (generation !== manual.generation || videoId !== currentVideoId()) return;
+            console.warn('[doctor] the source list could not be read:', error && error.message || 'unknown error');
+            toast(t('doctor.sourceListUnavailable'), 5000);
+        }).then(function () {
+            clearTimeout(lookup);
+            release();
         });
         return true;
     }
@@ -204,7 +315,7 @@
         var fraction = video.duration ? video.currentTime / video.duration : 0;
         Promise.all([rankedStreams(), currentStream()]).then(function (results) {
             var list = candidates(results[0] || [], results[1], config.raceCandidates || 2);
-            race = { videoId: videoId, list: list, best: null };
+            race = { videoId: videoId, list: list };
             list.forEach(function (next) { prepareOn(next, fraction); });
             offerMirrors(results[0] || [], results[1], list);
         });
@@ -244,8 +355,11 @@
         toast(prefix + title.slice(0, 70) + viaComputer, 5000);
         stalledSince = null;
         loadingSince = null;
+        delete state.blocked[currentVideoId()];
+        // Retry timers and late replies of the old source must not touch the new one
+        if (window.__stremioInvalidateRetryAttempt) window.__stremioInvalidateRetryAttempt();
         // The new source gets its own race once it is loading
-        race = { videoId: null, list: [], best: null };
+        race = { videoId: null, list: [] };
         prepared[currentVideoId()] = false;
         // The new player opens at the saved library position; keep the one the viewer is at instead
         var video = document.querySelector('video');
@@ -339,9 +453,9 @@
         hintShown = false;
         if (proxy && useRemoteServer(video, hash, proxy, reason)) return;
         if (nextSource(reason, true)) return;
-        // Nothing automatic is left to try for this video
-        state.status = 'critical';
-        state.reason = reason + '|noSwitch';
+        // Nothing better to switch to: keep this source, say why, and look again after the calm period
+        state.status = state.started[currentVideoId()] ? 'critical' : 'loading';
+        state.reason = reason + '|' + (state.blocked[currentVideoId()] || 'noSwitch');
     }
 
     function evaluate(video, stats, proxy, hash) {
@@ -384,8 +498,8 @@
         // A frozen picture: the viewer wants playback, the playhead does not move and the player waits for data
         var advancing = lastTime === null || video.currentTime > lastTime + 0.2;
         lastTime = video.currentTime;
-        // A video that never reached its first frame is still loading, which is not a freeze
-        var loading = video.readyState < 2 && video.currentTime < 0.5;
+        // A video that never showed a frame is still loading, whatever its ready state, which is not a freeze
+        var loading = !state.started[currentVideoId()] && video.currentTime < 0.5;
         loadingSince = loading ? loadingSince || now : null;
         stalledSince = playing && !loading && !video.seeking && !advancing && video.readyState < 3 ? stalledSince || now : null;
         var choppy = isChoppy(video, now, playing && !loading && !video.seeking);
@@ -412,7 +526,7 @@
             // Start sources the TV clearly cannot sustain on the LAN server, before any picture is shown
             calmUntil = now + calmFor();
             useRemoteServer(video, hash, proxy, 'heavyTv');
-        } else if (loadingSince && (waitedMs > (config.startTimeoutMs || 60000) || (waitedMs > (config.quickStartMs || 20000) && race.best && race.videoId === currentVideoId()))) {
+        } else if (loadingSince && (waitedMs > (config.startTimeoutMs || 60000) || (waitedMs > (config.quickStartMs || 20000) && race.videoId === currentVideoId() && choose(race.list, lastCurrent, false)))) {
             remedy(video, hash, proxy, 'waiting');
         } else if (frozenWithData(video, hash, proxy, stalledMs)) {
             // The data is on the server yet the picture does not move: the TV pipeline cannot decode this file, a conversion can
@@ -469,8 +583,9 @@
             state.status = 'ok';
             state.reason = needed ? 'keepingUp' : torrent ? 'waitingTorrent' : 'waitingDirect';
         }
-        // Keep telling that nothing automatic is left while the problem lasts
-        if (state.status !== 'ok' && state.exhausted[currentVideoId()]) state.reason += '|noSwitch';
+        // Keep telling why no automatic switch happens while the problem lasts
+        var blocked = state.blocked[currentVideoId()];
+        if (state.status !== 'ok' && blocked) state.reason += '|' + blocked;
     }
 
     function reasonText(reason) {
@@ -479,18 +594,10 @@
         return t(key);
     }
 
-    function raceStatus(video) {
-        // While a start waits, check which prepared source is really downloading, so a switch can be quick and certain
-        if (!race.list.length || race.videoId !== currentVideoId() || video.readyState >= 2) return null;
-        return pickLive(race.list).then(function (best) {
-            // A direct link needs no swarm to start
-            if (!best.infoHash) { race.best = best; return null; }
-            return fetchJson('/' + best.infoHash + '/' + (best.fileIdx || 0) + '/stats.json').then(function (st) {
-                // Fast enough to play: most of the bitrate its size and runtime need, or 1 MB/s when that is unknown
-                var needed = (window.__stremioStreamBitrate || {})[best.infoHash] || 1048576;
-                race.best = st && (st.downloadSpeed || 0) >= needed * (config.raceMinRatio || 0.8) ? best : null;
-            });
-        }).catch(function () {});
+    function sampleRace() {
+        // Measure the sources prepared for this video every tick, so a switch is decided on what they really deliver
+        if (!race.list.length || race.videoId !== currentVideoId()) return null;
+        return Promise.all(race.list.map(window.__twkEvidence.sample));
     }
 
     function tick() {
@@ -501,13 +608,16 @@
         var src = video.currentSrc || video.src || '';
         // An HLS conversion of a torrent keeps reporting that torrent: its swarm still feeds the picture
         var torrent = shared.sourceTorrent(src);
+        // The playing torrent file is measured with the same evidence as the candidates it is compared with
+        lastCurrent = torrent ? { infoHash: torrent[2].toLowerCase(), fileIdx: parseInt(torrent[3], 10) } : null;
         busy = true;
         Promise.all([
             torrent ? fetchJson(torrent[1] + '/' + torrent[2] + '/' + torrent[3] + '/stats.json') : null,
             fetchJson('/__tweaks/status'),
-            raceStatus(video)
+            sampleRace()
         ]).then(function (results) {
             busy = false;
+            if (lastCurrent) window.__twkEvidence.note(lastCurrent, results[0]);
             evaluate(video, results[0], results[1], torrent ? torrent[2].toLowerCase() : null);
         });
     }
@@ -526,6 +636,23 @@
 
     function onRouteChange() {
         // Reset per-video state and show the hint the first time the player opens
+        var active = onPlayer();
+        var videoId = currentVideoId();
+        // Opening the player anew starts a fresh budget for that video; a source switch replaces the entry without leaving it
+        if (active && !playerActive) {
+            state.tried[videoId] = [];
+            state.switches[videoId] = 0;
+            state.started[videoId] = false;
+            delete state.exhausted[videoId];
+            delete state.blocked[videoId];
+        }
+        // A pending manual switch belongs to the video it was asked on
+        if (!active || videoId !== playerVideoId) {
+            manual.generation++;
+            manual.busy = false;
+        }
+        playerActive = active;
+        playerVideoId = videoId;
         lastTime = null;
         stalledSince = null;
         loadingSince = null;
