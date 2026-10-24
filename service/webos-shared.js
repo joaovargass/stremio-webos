@@ -270,6 +270,7 @@
         whenCoreReady: whenCoreReady,
         savedRate: savedRate,
         learnedRate: learnedRate,
+        learnedMinSamples: LEARNED_MIN_SAMPLES,
         onPlayer: onPlayer,
         torrentOf: torrentOf,
         sourceTorrent: sourceTorrent,

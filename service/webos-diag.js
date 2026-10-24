@@ -174,11 +174,17 @@
         }).catch(function () { serverInfo[key] = { unavailable: true }; });
     }
 
+    function learnedValue(key, present) {
+        // A learned speed, how far the learning is while it gathers samples, or that no computer was found
+        var rate = shared.learnedRate(key);
+        if (rate) return mbps(rate);
+        if (!present) return t('diag.noComputer');
+        return t('diag.learningSamples', { count: Math.min(shared.savedRate(key).n, shared.learnedMinSamples), total: shared.learnedMinSamples });
+    }
+
     function learnedText() {
         // The speeds the ranking compares sources with, so a lowered 4K is explained
-        var tv = shared.learnedRate('twk.tvRate');
-        var lan = shared.learnedRate('twk.lanRate');
-        return t('diag.learnedPair', { tv: tv ? mbps(tv) : t('diag.learning'), computer: lan ? mbps(lan) : t('diag.learning') });
+        return t('diag.learnedPair', { tv: learnedValue('twk.tvRate', true), computer: learnedValue('twk.lanRate', window.__stremioLanAvailable === true) });
     }
 
     function renderServer(origin, proxy, src, hash) {
@@ -197,8 +203,10 @@
         var local = /127\.0\.0\.1|localhost/.test(real);
         setText('server', real.replace(/^https?:\/\//, '') + ' ' + (local ? t('diag.server.tv') : routed ? t('diag.server.computerVideo') : t('diag.server.localNetwork')), local ? 'good' : 'warn');
         setText('version', info.unavailable ? t('diag.unavailable') : info.version || '?');
-        var cache = info.cache === 0 ? t('diag.noCache') : info.cache ? megabytes(info.cache) : '?';
-        setText('limit', (info.limit ? mbps(info.limit) : '?') + ' / ' + cache);
+        // Until the server answers its settings every field shows the same loading mark
+        var pending = info.version === '...' ? '...' : '?';
+        var cache = info.cache === 0 ? t('diag.noCache') : info.cache ? megabytes(info.cache) : pending;
+        setText('limit', (info.limit ? mbps(info.limit) : pending) + ' / ' + cache);
     }
 
     function renderServers(status) {
@@ -226,13 +234,14 @@
         // A file the server already holds needs no peers and no speed
         var complete = (stats.streamProgress || 0) >= 0.999;
         setText('peers', t('diag.connected', { peers: stats.peers, sending: stats.unchoked }), stats.unchoked || complete ? null : 'bad');
-        setText('sources', t('diag.sourcesAttempts', { sources: (stats.sources || []).length || 'DHT', attempts: stats.connectionTries || 0 }));
+        setText('sources', t('diag.peerSearch', { sources: (stats.sources || []).length, found: window.__twkEvidence.peersFound(stats), attempts: stats.connectionTries || 0 }));
         if (complete) setText('speed', t('diag.fullFile'), 'good');
         else setText('speed', mbps(stats.downloadSpeed) + (needed ? '  (' + margin.toFixed(1) + '×)' : ''), tone);
         setBar('speedBar', complete ? 1 : needed ? margin / 2 : 0, complete ? 'good' : tone);
-        setText('needed', needed ? mbps(needed) : '?');
+        // The bitrate needs the file size and the video length, the size needs the torrent metadata
+        setText('needed', needed ? mbps(needed) : t(stats.streamLen ? 'diag.neededUnknown' : 'diag.waitingMetadata'));
         setText('transfer', megabytes(stats.downloaded) + ' / ' + megabytes(stats.uploaded));
-        setText('progress', t('diag.fileProgress', { percent: window.__twkI18n.number((stats.streamProgress || 0) * 100, 1), size: megabytes(stats.streamLen) }));
+        setText('progress', stats.streamLen ? t('diag.fileProgress', { percent: window.__twkI18n.number((stats.streamProgress || 0) * 100, 1), size: megabytes(stats.streamLen) }) : t('diag.waitingMetadata'));
         setBar('progressBar', stats.streamProgress || 0);
     }
 
@@ -246,7 +255,7 @@
         setText('position', shared.duration(video.currentTime) + ' / ' + shared.duration(video.duration));
         setText('buffer', ahead.toFixed(0) + ' s', tone);
         setBar('bufferBar', ahead / BUFFER_TARGET_S, tone);
-        setText('frames', quality && quality.totalVideoFrames ? quality.droppedVideoFrames + ' / ' + quality.totalVideoFrames : t('diag.noVideoTracks'));
+        setText('frames', quality && quality.totalVideoFrames ? quality.droppedVideoFrames + ' / ' + quality.totalVideoFrames : t('diag.framesNotReported'));
         setText('recovery', (retry.retries || 0) + (retry.hlsUrl ? ' · ' + t('diag.hls') : ''), retry.retries ? 'warn' : null);
         var pick = window.__stremioSubPick;
         var synced = window.__stremioSubSync;

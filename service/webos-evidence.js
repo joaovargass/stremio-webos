@@ -131,5 +131,5 @@
         if (key && stats) record(key, stats, true);
     }
 
-    window.__twkEvidence = { key: keyOf, sample: sample, note: note, assess: assess, measured: measured };
+    window.__twkEvidence = { key: keyOf, sample: sample, note: note, assess: assess, measured: measured, peersFound: peersFound };
 })();
