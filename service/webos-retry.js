@@ -173,6 +173,13 @@
         if (v instanceof HTMLMediaElement && v.currentTime > 0) v.__lastTime = v.currentTime;
     }, true);
 
+    function starving(match) {
+        // The evidence of the torrent file: no measured speed yet, or under half its bitrate, means the data is not there
+        var result = window.__twkEvidence ? window.__twkEvidence.assess({ infoHash: match[2], fileIdx: parseInt(match[3], 10) }) : null;
+        if (!result || result.verdict === 'direct' || result.verdict === 'unknown') return false;
+        return result.ratio === null || result.ratio < 0.5;
+    }
+
     function canConvert() {
         // HLS needs a server with ffmpeg; an unknown state still allows one attempt
         var doctor = window.__stremioDoctor;
@@ -296,9 +303,9 @@
         var resumeAt = video.__lastTime || 0;
         var onHls = state.hlsUrl !== null && video.getAttribute('src') === state.hlsUrl;
         var match = shared.torrentOf(stream.url);
-        // A torrent with no data yet, or one that already played and stopped, is starving; a decode error (3) means a broken file
+        // A torrent with no data yet, or one that played and stopped, is starving; a decode error (3) is too while the torrent delivers far below its bitrate
         var played = video.__playedSrc === video.getAttribute('src');
-        var starved = match !== null && code !== 3 && (video.readyState === 0 || played);
+        var starved = match !== null && (code !== 3 ? video.readyState === 0 || played : starving(match));
         console.warn('[stall-retry] code', code, 'ready', video.readyState, 'hls', onHls, 'resumeAt', resumeAt, stream.url);
         // A starved torrent is retried as is, also when already on HLS
         if (starved && retryConfig.enabled !== false && state.retries < retryConfig.maxRetries) {
