@@ -199,6 +199,16 @@
             'enhance.live.tested': 'tested · {speed} · {peers} peers',
             'enhance.live.slow': 'slow in test',
             'enhance.seeds': '{count} seeds',
+            'recs.topPicks': 'Top picks for you', 'recs.because': 'Because you watched {title}', 'recs.genre': '{genre} for you',
+            'recs.newReleases': 'New releases', 'recs.acclaimed': 'Critically acclaimed', 'recs.watchAgain': 'Watch it again',
+            'recs.top10.movie': 'Top 10 movies today', 'recs.top10.series': 'Top 10 series today',
+            'genre.Action': 'Action', 'genre.Adventure': 'Adventure', 'genre.Animation': 'Animation', 'genre.Biography': 'Biographies',
+            'genre.Comedy': 'Comedy', 'genre.Crime': 'Crime', 'genre.Documentary': 'Documentaries', 'genre.Drama': 'Drama',
+            'genre.Family': 'Family', 'genre.Fantasy': 'Fantasy', 'genre.Game-Show': 'Competitions', 'genre.History': 'History',
+            'genre.Horror': 'Horror', 'genre.Music': 'Music', 'genre.Musical': 'Musicals', 'genre.Mystery': 'Mystery',
+            'genre.News': 'News', 'genre.Reality-TV': 'Reality shows', 'genre.Romance': 'Romance', 'genre.Sci-Fi': 'Sci-fi',
+            'genre.Sport': 'Sports', 'genre.Talk-Show': 'Talk shows', 'genre.Thriller': 'Thrillers', 'genre.War': 'War',
+            'genre.Western': 'Westerns', 'genre.Film-Noir': 'Film noir',
         },
         'pt-BR': {
             'settings.title': 'Ajustes', 'settings.keys': '↑↓ ←→ OK',
@@ -398,6 +408,16 @@
             'enhance.live.tested': 'testada · {speed} · {peers} peers',
             'enhance.live.slow': 'lenta no teste',
             'enhance.seeds': '{count} seeds',
+            'recs.topPicks': 'Escolhas para você', 'recs.because': 'Porque você assistiu {title}', 'recs.genre': '{genre} para você',
+            'recs.newReleases': 'Lançamentos', 'recs.acclaimed': 'Aclamados pela crítica', 'recs.watchAgain': 'Assista de novo',
+            'recs.top10.movie': 'Top 10 filmes hoje', 'recs.top10.series': 'Top 10 séries hoje',
+            'genre.Action': 'Ação', 'genre.Adventure': 'Aventura', 'genre.Animation': 'Animação', 'genre.Biography': 'Biografias',
+            'genre.Comedy': 'Comédia', 'genre.Crime': 'Crime', 'genre.Documentary': 'Documentários', 'genre.Drama': 'Drama',
+            'genre.Family': 'Família', 'genre.Fantasy': 'Fantasia', 'genre.Game-Show': 'Competição', 'genre.History': 'História',
+            'genre.Horror': 'Terror', 'genre.Music': 'Música', 'genre.Musical': 'Musical', 'genre.Mystery': 'Mistério',
+            'genre.News': 'Notícias', 'genre.Reality-TV': 'Reality shows', 'genre.Romance': 'Romance', 'genre.Sci-Fi': 'Ficção científica',
+            'genre.Sport': 'Esportes', 'genre.Talk-Show': 'Talk shows', 'genre.Thriller': 'Suspense', 'genre.War': 'Guerra',
+            'genre.Western': 'Faroeste', 'genre.Film-Noir': 'Filme noir',
         }
     };
     var locale = 'en';

@@ -303,6 +303,46 @@
         "convertTimeoutMs": 20000,
         "convertMaxBytes": 4194304
     },
+    "recommendations": {
+        "enabled": true,
+        "cinemetaUrl": "https://v3-cinemeta.strem.io",
+        "requestTimeoutMs": 8000,
+        "catalogTtlMs": 21600000,
+        "profileTtlMs": 600000,
+        "historyLimit": 120,
+        "halfLifeDays": 60,
+        "seriesFullMs": 10800000,
+        "smoothing": 2,
+        "genreRows": 5,
+        "becauseRows": 3,
+        "franchiseSeeds": 5,
+        "maxPerFranchise": 2,
+        "rowLength": 20,
+        "minRowItems": 4,
+        "maxRows": 10,
+        "mmrLambda": 0.7,
+        "rowOverlapPenalty": 1,
+        "top10Boost": 0.2,
+        "rowWeights": {
+            "watchAgain": 0.5
+        },
+        "billboardTitles": 6,
+        "fatigueAfter": 6,
+        "weights": {
+            "franchise": 2,
+            "genre": 3,
+            "people": 1.5,
+            "type": 0.5,
+            "decade": 0.3,
+            "rating": 0.6,
+            "popularity": 0.4,
+            "fresh": 0.3,
+            "explore": 0.15,
+            "fatigue": 0.1,
+            "abandoned": 0.3,
+            "rewatch": 0.5
+        }
+    },
     "answerCache": {
         "enabled": true,
         "meta": { "ttlMs": 600000, "maxEntries": 40, "maxBytes": 1048576, "maxEntryBytes": 262144 },

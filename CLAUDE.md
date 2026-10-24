@@ -29,6 +29,7 @@ service/              # webOS service
   tweaks.json         # Defaults for every tweak, shared by launch.js and the frontend
   webos-shared.js     # Loaded first: panel stack (Back closes the top panel), panel frame and button, notice toast, shared helpers
   webos-i18n.js       # Translation dictionary; texts follow the Stremio interface language (English, Brazilian Portuguese)
+  webos-recs.js       # Recommendation engine: taste profile from the watch history, Cinemeta candidates, scoring, Netflix-like row pages
   webos-enhance.js    # Points the profile at the proxy, adds trackers, ranks streams, prewarms the recommended one
   webos-retry.js      # Stall recovery and in-player HLS fallback (no external player)
   webos-subs.js       # Subtitle list cleanup, OpenSubtitles lookup, sync-likelihood ranking, automatic choice, Netflix style
