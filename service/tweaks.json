@@ -308,6 +308,13 @@
         "meta": { "ttlMs": 600000, "maxEntries": 40, "maxBytes": 1048576, "maxEntryBytes": 262144 },
         "hlsStart": { "segments": 3, "ttlMs": 600000, "maxEntries": 12, "maxBytes": 16777216, "maxEntryBytes": 8388608, "singleGroup": true }
     },
+    "torrentProfile": {
+        "btMaxConnections": 150,
+        "btDownloadSpeedSoftLimit": 20971520,
+        "btDownloadSpeedHardLimit": 20971520,
+        "btHandshakeTimeout": 20000,
+        "btRequestTimeout": 4000
+    },
     "devMode": {
         "keepAlive": true,
         "tokenPath": "/var/luna/preferences/devmode_enabled",

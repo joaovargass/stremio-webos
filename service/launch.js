@@ -1213,6 +1213,45 @@ function seedServerSettings() {
     try { fs.writeFileSync(file, JSON.stringify(settings, null, 4)); } catch (err) { console.error('[service] Could not write the streaming server settings: ' + err.message); }
 }
 
+function applyTorrentProfile(attempt) {
+    // The TV server, ours or the official app's, gets the torrent profile measured best on the TV; only values that differ are sent
+    var profile = tweaks.torrentProfile;
+    if (!profile) return;
+    attempt = attempt || 1;
+    var retry = function(reason) {
+        if (attempt >= 10) return console.warn('[service] Could not set the torrent profile of the TV server: ' + reason);
+        setTimeout(function() { applyTorrentProfile(attempt + 1); }, 5000);
+    };
+    var req = http.get({ hostname: '127.0.0.1', port: 11470, path: '/settings', timeout: 10000 }, function(res) {
+        var body = '';
+        res.setEncoding('utf8');
+        res.on('data', function(part) { body += part; });
+        res.on('end', function() {
+            var values;
+            try { values = JSON.parse(body).values || {}; } catch (_) { return retry('unreadable settings'); }
+            var changes = {};
+            Object.keys(profile).forEach(function(key) { if (values[key] !== profile[key]) changes[key] = profile[key]; });
+            if (!Object.keys(changes).length) return;
+            postServerSettings(changes, retry);
+        });
+    });
+    req.on('timeout', function() { req.destroy(new Error('no answer')); });
+    req.on('error', function(err) { retry(err.message); });
+}
+
+function postServerSettings(changes, retry) {
+    // The server keeps posted settings in its own settings file, so they survive its restarts
+    var body = JSON.stringify(changes);
+    var req = http.request({ hostname: '127.0.0.1', port: 11470, path: '/settings', method: 'POST', timeout: 10000, headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } }, function(res) {
+        res.resume();
+        if (res.statusCode !== 200) return retry('HTTP ' + res.statusCode);
+        console.log('[service] Set the torrent profile of the TV server: ' + Object.keys(changes).map(function(key) { return key + ' ' + changes[key]; }).join(', '));
+    });
+    req.on('timeout', function() { req.destroy(new Error('no answer')); });
+    req.on('error', function(err) { retry(err.message); });
+    req.end(body);
+}
+
 // Start the bundled server only when no streaming server already owns :11470, saving RAM
 probe('http://127.0.0.1:11470/', function(running) {
     if (!running) {
@@ -1222,6 +1261,8 @@ probe('http://127.0.0.1:11470/', function(running) {
         require('./server.js');
     }
     selectUpstream();
+    // A server started just now needs a moment before it answers its settings
+    setTimeout(applyTorrentProfile, running ? 0 : 5000);
     if (tweaks.servers.recheckIntervalMs) {
         setInterval(selectUpstream, tweaks.servers.recheckIntervalMs);
     }
