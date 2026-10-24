@@ -14,7 +14,7 @@
 +                        if (__prefLang) {
 +                            for (var __ai = 0; __ai < d.audioTracks.length; __ai++) {
 +                                var __tl = d.audioTracks[__ai].language || "";
-+                                if (__tl === __prefLang || __tl.substring(0, 2) === __prefLang.substring(0, 2)) {
++                                if (window.__twkShared.sameLanguage(__tl, __prefLang)) {
 +                                    __prefIdx = __ai; break;
 +                                }
 +                            }
@@ -173,7 +173,7 @@
 +                        if (prefLang) {
 +                            for (var ai = 0; ai < A.audioTracks.length; ai++) {
 +                                var tl = A.audioTracks[ai].language || "";
-+                                if (tl === prefLang || tl.substring(0,2) === prefLang.substring(0,2)) {
++                                if (window.__twkShared.sameLanguage(tl, prefLang)) {
 +                                    prefIdx = ai; break;
 +                                }
 +                            }

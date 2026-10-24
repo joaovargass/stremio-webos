@@ -13,7 +13,6 @@
         'pt-br': ['pob', 'pt-br', 'pt_br', 'ptbr', 'pb', 'brazilian', 'portuguese (brazil)', 'português (brasil)'],
         pt: ['por', 'pt', 'pt-pt', 'portuguese', 'português']
     };
-    var ISO3_TO_2 = { eng: 'en', spa: 'es', spl: 'es', spn: 'es', fre: 'fr', fra: 'fr', ger: 'de', deu: 'de', ita: 'it', jpn: 'ja', kor: 'ko', chi: 'zh', zho: 'zh', rus: 'ru', ara: 'ar', hin: 'hi', tur: 'tr', pol: 'pl', dut: 'nl', nld: 'nl', swe: 'sv' };
     var RELEASE_TAGS = ['web', 'webdl', 'webrip', 'bluray', 'brrip', 'bdrip', 'hdtv', 'dvdrip', 'remux', '720p', '1080p', '2160p', 'amzn', 'nf', 'dsnp', 'hmax', 'atvp', 'hulu', 'ip'];
     var extraCache = {};
     var pending = {};
@@ -27,8 +26,7 @@
         var value = String(lang || '').toLowerCase().trim();
         if (LANG_GROUPS['pt-br'].indexOf(value) !== -1) return 'pt-br';
         if (LANG_GROUPS.pt.indexOf(value) !== -1) return 'pt';
-        var head = value.split(/[-_ ]/)[0];
-        return ISO3_TO_2[head] || head;
+        return shared.languageCode(value);
     }
 
     function isError(track) {
@@ -96,8 +94,8 @@
         var subtitle = tokens(track.subtitleFileName);
         if (track.m === 'h') score += 100;
         if (track.releaseGroup && video.indexOf(String(track.releaseGroup).toLowerCase()) !== -1) score += 30;
-        var shared = RELEASE_TAGS.filter(function (tag) { return video.indexOf(tag) !== -1 && subtitle.indexOf(tag) !== -1; }).length;
-        score += Math.min(20, shared * 5);
+        var common = RELEASE_TAGS.filter(function (tag) { return video.indexOf(tag) !== -1 && subtitle.indexOf(tag) !== -1; }).length;
+        score += Math.min(20, common * 5);
         // Split CD1/CD2 subtitles never match a single-file release
         if (/\bcd ?\d\b/i.test(track.subtitleFileName || '')) score -= 40;
         return score;

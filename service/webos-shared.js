@@ -6,6 +6,13 @@
     var BACK_KEYS = [461, 27, 8];
     var TORRENT_URL = /^(https?:\/\/[^/]+)\/([0-9a-f]{40})\/(\d+)/i;
     var LEARNED_MIN_SAMPLES = 30;
+    // ISO 639-2 (bibliographic and terminology) and Stremio's own codes, as ISO 639-1
+    var LANGUAGE_CODES = {
+        eng: 'en', por: 'pt', pob: 'pt', spa: 'es', spl: 'es', spn: 'es', fre: 'fr', fra: 'fr', ger: 'de', deu: 'de',
+        ita: 'it', jpn: 'ja', kor: 'ko', chi: 'zh', zho: 'zh', rus: 'ru', ara: 'ar', hin: 'hi', tur: 'tr', pol: 'pl',
+        dut: 'nl', nld: 'nl', swe: 'sv', dan: 'da', nor: 'no', nob: 'no', fin: 'fi', cze: 'cs', ces: 'cs', gre: 'el',
+        ell: 'el', heb: 'he', hun: 'hu', rum: 'ro', ron: 'ro', tha: 'th', vie: 'vi', ind: 'id', ukr: 'uk'
+    };
     var closers = {};
     var stack = [];
     var notice = null;
@@ -220,6 +227,18 @@
         return 0;
     }
 
+    function languageCode(value) {
+        // Any tag a profile, a track or an addon uses (en, eng, en-US, pob, pt_BR, fre, fra) as its two-letter language
+        var head = String(value || '').toLowerCase().trim().split(/[-_ ]/)[0];
+        return LANGUAGE_CODES[head] || head;
+    }
+
+    function sameLanguage(a, b) {
+        // Two language tags name the same language, whatever standard each one follows
+        var code = languageCode(a);
+        return !!code && code === languageCode(b);
+    }
+
     function resolution(text) {
         // Vertical pixel count a release names, 0 when it names none
         var words = String(text || '').toLowerCase();
@@ -255,6 +274,8 @@
         torrentOf: torrentOf,
         sourceTorrent: sourceTorrent,
         bufferAhead: bufferAhead,
+        languageCode: languageCode,
+        sameLanguage: sameLanguage,
         resolution: resolution
     };
 })();
