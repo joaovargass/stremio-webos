@@ -64,7 +64,7 @@
     },
     "prewarm": {
         "enabled": true,
-        "warmBytes": 1048576,
+        "warmBytes": 4194304,
         "timeoutMs": 120000
     },
     "stallRetry": {
@@ -223,6 +223,15 @@
     },
     "hints": {
         "firstRunToast": true
+    },
+    "evidence": {
+        "windowMs": 30000,
+        "minSpanMs": 10000,
+        "deadAfterMs": 45000,
+        "rampMs": 30000,
+        "idleAfterMs": 8000,
+        "sampleMs": 2000,
+        "pruneAfterMs": 600000
     },
     "liveTest": {
         "enabled": true,
