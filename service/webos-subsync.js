@@ -53,7 +53,7 @@
 
     function check() {
         // Run at most one measurement at a time, only on the player with an external subtitle
-        if (busy || config.autoSync === false || !shared.onPlayer() || !window.__stremioSetSubtitlesDelay) return;
+        if (busy || !config.enabled || config.autoSync === false || !shared.onPlayer() || !window.__stremioSetSubtitlesDelay) return;
         var video = document.querySelector('video');
         var state = playerState();
         var track = selectedTrack(state);
@@ -115,5 +115,6 @@
     // The app router navigates with pushState and announces it as historyChange
     window.addEventListener('hashchange', onRouteChange);
     window.addEventListener('historyChange', onRouteChange);
-    if (config.enabled && config.autoSync !== false) setInterval(check, 5000);
+    // The check always runs and reads the switches each time, so the settings apply without a reload
+    setInterval(check, 5000);
 })();

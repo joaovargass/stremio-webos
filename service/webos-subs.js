@@ -171,7 +171,7 @@
         var native = window.__stremioNativeLang || null;
         // The player reads its state many times a second; the same tracks in the same context reuse the last order
         var stream = (state.selected && state.selected.stream) || {};
-        var signature = [key, (stream.behaviorHints || {}).filename, native, profile.subs.join(','), t('subtitle.label.synced'), extraCache[key] ? extraCache[key].length : 'pending', state.subtitles.map(function (track) { return track && track.url; }).join(',')].join('|');
+        var signature = [key, (stream.behaviorHints || {}).filename, simple.enabled, native, profile.subs.join(','), t('subtitle.label.synced'), extraCache[key] ? extraCache[key].length : 'pending', state.subtitles.map(function (track) { return track && track.url; }).join(',')].join('|');
         if (signature !== ordered.signature) ordered = { key: key, signature: signature, subtitles: orderTracks(state, key, native) };
         var selected = state.selected;
         // Subtitles that come with the stream itself go through the converter as well
@@ -368,8 +368,15 @@
     window.addEventListener('hashchange', onRouteChange);
     window.addEventListener('historyChange', onRouteChange);
 
-    // The Netflix-like look is a stylesheet switch on the root element
-    if (config.enabled && config.netflixStyle !== false) document.documentElement.classList.add('twk-netflix-subs');
+    function applyStyle() {
+        // The Netflix-like look is a stylesheet switch on the root element, flipped again whenever its settings change
+        document.documentElement.classList.toggle('twk-netflix-subs', !!config.enabled && config.netflixStyle !== false);
+    }
+
+    applyStyle();
+    window.addEventListener('twk-setting-changed', function (e) {
+        if (/^subtitles\.(enabled|netflixStyle)$/.test(e.detail.key)) applyStyle();
+    });
 
     window.__stremioSubs = { enhancePlayer: enhancePlayer, baseLang: baseLang, scoreOf: scoreOf, cycle: cycleSubtitles, cache: extraCache, onlyInFile: onlyInFile, textLanguages: textLanguages };
 })();

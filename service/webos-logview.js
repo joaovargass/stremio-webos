@@ -113,7 +113,6 @@
         // Open on top of the panel stack once the language is known; the panel below keeps its state for when the reader closes
         if (open) return Promise.resolve();
         open = true;
-        window.dispatchEvent(new CustomEvent('twk-logview-opened'));
         return window.__twkI18n.refresh().then(function () {
             if (!open) return;
             if (!view) build();
@@ -129,7 +128,6 @@
         if (!open) return;
         open = false;
         if (view) view.hide();
-        window.dispatchEvent(new CustomEvent('twk-logview-closed'));
     }
 
     function onKey(event) {

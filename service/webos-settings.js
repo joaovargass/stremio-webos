@@ -1,8 +1,8 @@
 // Settings panel with an on/off switch for every tweak added on top of the original
 // app, plus choice rows (OK cycles the values). Choices are saved on the TV
 // (localStorage "twk.overrides"), applied over tweaks.json by index.html at start
-// and shared with the service. Opens with a remote colour key; closing after a
-// change reloads the app to apply it.
+// and shared with the service. Opens with a remote colour key; every change applies
+// at once, without reloading the app, so a playing video keeps playing.
 (function () {
     var config = (window.STREMIO_TWEAKS || {}).settings || {};
     var shared = window.__twkShared;
@@ -10,7 +10,6 @@
     var t = window.__twkI18n.t;
     var STORAGE_KEY = 'twk.overrides';
     var KEYS = { up: 38, down: 40, left: 37, right: 39, enter: 13, back: 461, escape: 27 };
-    var APPLY_DELAY_MS = 800;
     var QUALITY = ['best', '2160p', '1080p', '720p'];
     var DETAIL = ['essential', 'detailed', 'everything'];
     var GROUPS = [
@@ -72,9 +71,6 @@
     var groupTitles = [];
     var focus = 0;
     var open = false;
-    var changed = false;
-    var reloadAfterLogView = false;
-    var reloadTimer = null;
 
     function readOverrides() {
         // Saved choices, empty when storage is unavailable
@@ -154,8 +150,6 @@
         var entry = rows[focus];
         if (entry.action) {
             if (!window.__twkLogView) return;
-            reloadAfterLogView = reloadAfterLogView || changed;
-            changed = false;
             if (window.__twkDebug && window.__twkDebug.action) window.__twkDebug.action('settings', 'action', 'Opened debug log viewer');
             window.__twkLogView.open();
             return;
@@ -165,7 +159,7 @@
         overrides[entry.key] = entry.on;
         var saved = true;
         try { localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides)); } catch (_e) { saved = false; }
-        changed = true;
+        apply(entry.key, entry.on);
         paint();
         if (window.__twkDebug) {
             var value = entry.options ? entry.on : entry.on ? 'enabled' : 'disabled';
@@ -174,32 +168,33 @@
         }
     }
 
+    function apply(key, value) {
+        // Every module reads its section of the live settings when it acts, so writing there applies the choice at once
+        var parts = key.split('.');
+        var tweaks = window.STREMIO_TWEAKS = window.STREMIO_TWEAKS || {};
+        tweaks[parts[0]] = tweaks[parts[0]] || {};
+        tweaks[parts[0]][parts[1]] = value;
+        // The service keeps its own copy of the switches it uses
+        if (window.__twkSendServiceOverrides) window.__twkSendServiceOverrides();
+        // Modules with something already on screen redraw it for the new value
+        window.dispatchEvent(new CustomEvent('twk-setting-changed', { detail: { key: key, value: value } }));
+    }
+
     function show() {
         // Open the panel on top of any screen
         return window.__twkI18n.refresh().then(function () {
             if (!view) createPanel();
             open = true;
-            changed = false;
             paint();
             view.show();
         });
     }
 
-    function applyChanges() {
-        // Reload once so every module and the service start with the new choices
-        shared.notify(t('settings.applied'));
-        reloadTimer = setTimeout(function () {
-            reloadTimer = null;
-            location.reload();
-        }, APPLY_DELAY_MS);
-    }
-
     function hide() {
-        // Close the panel; changed choices apply right away
+        // Close the panel; the choices already apply
         if (!open) return;
         open = false;
         view.hide();
-        if (changed) applyChanges();
     }
 
     function onKey(e) {
@@ -226,21 +221,6 @@
         rows[focus].row.scrollIntoView({ block: 'nearest' });
     }
 
-    function onLogViewOpened() {
-        // The viewer opened over a pending reload: the reload waits until the viewer closes
-        if (reloadTimer) clearTimeout(reloadTimer);
-        reloadTimer = null;
-    }
-
-    function onLogViewClosed() {
-        // Choices changed before the viewer opened apply once it closes
-        if (!reloadAfterLogView) return;
-        reloadAfterLogView = false;
-        applyChanges();
-    }
-
-    window.addEventListener('twk-logview-opened', onLogViewOpened);
-    window.addEventListener('twk-logview-closed', onLogViewClosed);
     window.addEventListener('keydown', onKey, true);
 
     window.__stremioSettings = {

@@ -715,7 +715,8 @@
     window.addEventListener('hashchange', onRouteChange);
     window.addEventListener('historyChange', onRouteChange);
 
-    if (config.enabled) setInterval(tick, config.checkEveryMs || 2000);
+    // The loop always runs and each tick checks the switch, so the setting applies without a reload
+    setInterval(tick, config.checkEveryMs || 2000);
 
     window.__stremioDoctor = {
         nextSource: nextSource,

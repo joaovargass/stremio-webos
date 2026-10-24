@@ -169,6 +169,21 @@
         return section ? '#/' + section[1] : '#/';
     }
 
+    function onSettingChanged(e) {
+        // The detail level and the corner card follow the settings panel at once
+        var key = e.detail.key;
+        if (key === 'debug.detail' && DETAIL[e.detail.value] !== undefined) {
+            detailName = e.detail.value;
+            detail = DETAIL[detailName];
+        }
+        if (key !== 'debug.detail' && key !== 'debug.overlay') return;
+        if (!config.overlay && box) {
+            box.remove();
+            box = null;
+        }
+        paint();
+    }
+
     function causeName(frames) {
         // Who asked for a route change, read from the code that called the router
         for (var i = 0; i < CAUSES.length; i++) if (CAUSES[i][0].test(frames)) return CAUSES[i][1];
@@ -251,6 +266,7 @@
         navCause = 'link';
     });
     window.addEventListener('error', onPageError);
+    window.addEventListener('twk-setting-changed', onSettingChanged);
     add('debug', 'info', 'debug log on, ' + { essential: 'essential', detailed: 'standard', everything: 'full' }[detailName] + ' detail');
     pollService();
 })();

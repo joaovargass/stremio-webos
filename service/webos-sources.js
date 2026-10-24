@@ -202,7 +202,7 @@
         // While open the picker owns the arrows, OK and Back; the colour key toggles it on the player
         var code = e.keyCode;
         if (!open) {
-            if (code === config.hotkey && (onPlayer() || onTitle())) {
+            if (config.enabled && code === config.hotkey && (onPlayer() || onTitle())) {
                 e.preventDefault();
                 e.stopPropagation();
                 show();
@@ -233,8 +233,7 @@
         showHint(false);
         // Any route change closes the picker; it belongs to the screen it was opened on
         hide();
-        if (!onPlayer()) return;
-        if (config.loadingHint === false) return;
+        if (!onPlayer() || !config.enabled || config.loadingHint === false) return;
         loadingTimer = setTimeout(function () {
             var video = document.querySelector('video');
             if (onPlayer() && (!video || video.readyState < 2)) showHint(true);
@@ -275,7 +274,7 @@
     function onResume(e) {
         // A video that resumes far from its start tells once how to start over
         var video = e.target;
-        if (!(video instanceof HTMLMediaElement) || !onPlayer() || restart.resumeHint === false) return;
+        if (!(video instanceof HTMLMediaElement) || !onPlayer() || restart.enabled === false || restart.resumeHint === false) return;
         var key = video.getAttribute('src');
         if (resumeShown[key]) return;
         resumeShown[key] = true;
@@ -357,21 +356,14 @@
     window.addEventListener('keyup', trackOk, true);
     window.addEventListener('historyChange', autoPlayEpisode);
 
-    if (restart.enabled !== false) {
-        window.addEventListener('keydown', function (e) {
-            if (e.keyCode !== restart.hotkey || open) return;
-            e.preventDefault();
-            e.stopPropagation();
-            restartFromStart();
-        }, true);
-        document.addEventListener('playing', onResume, true);
-    }
-
-    if (!config.enabled) {
-        window.__stremioSources = { toggle: function () { if (window.__stremioDoctor) window.__stremioDoctor.nextSource('manual', false); }, hint: function () {} };
-        return;
-    }
-
+    // The settings switch these features on and off while the app runs, so every listener checks them when it fires
+    window.addEventListener('keydown', function (e) {
+        if (restart.enabled === false || e.keyCode !== restart.hotkey || open) return;
+        e.preventDefault();
+        e.stopPropagation();
+        restartFromStart();
+    }, true);
+    document.addEventListener('playing', onResume, true);
     window.addEventListener('keydown', onKey, true);
     // The app router navigates with pushState and announces it as historyChange
     window.addEventListener('hashchange', watchLoading);
@@ -379,8 +371,12 @@
     document.addEventListener('playing', function () { showHint(false); }, true);
 
     window.__stremioSources = {
-        toggle: function () { return open ? hide() : show(); },
+        // With the picker off, the player button plays the next source directly
+        toggle: function () {
+            if (!config.enabled) return window.__stremioDoctor && window.__stremioDoctor.nextSource('manual', false);
+            return open ? hide() : show();
+        },
         ensure: ensureStreams,
-        hint: function (visible) { if (config.loadingHint !== false) showHint(visible); }
+        hint: function (visible) { if (config.enabled && config.loadingHint !== false) showHint(visible); }
     };
 })();
