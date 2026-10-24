@@ -6,6 +6,7 @@
     /* Type */
     --twk-font: 'PlusJakartaSans', -apple-system, BlinkMacSystemFont, sans-serif;
     --twk-font-subtitles: 'PlusJakartaSans', 'Helvetica Neue', Arial, sans-serif;
+    --twk-font-mono: 'DejaVu Sans Mono', monospace;
     --twk-text-xs: 1.15vh;
     --twk-text-s: 1.5vh;
     --twk-text-m: 1.75vh;
@@ -684,6 +685,14 @@ html[data-twk-top]:not([data-twk-top=""]) .twk-debug {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     -webkit-line-clamp: unset;
+}
+
+/* The original server trace under its sentence, dim and in a fixed-width face */
+.twk-log-raw {
+    display: block;
+    color: var(--twk-faint);
+    font-family: var(--twk-font-mono);
+    font-size: var(--twk-text-xs);
 }
 
 /* Netflix-like external subtitles: clean white sans text, no box, soft shadow with a thin outline */

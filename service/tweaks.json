@@ -253,7 +253,12 @@
         "overlay": true,
         "detail": "detailed",
         "lines": 10,
-        "pollMs": 1000
+        "pollMs": 1000,
+        "ring": {
+            "important": 200,
+            "normal": 300,
+            "verbose": 400
+        }
     },
     "subtitles": {
         "enabled": true,

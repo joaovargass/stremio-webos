@@ -12,20 +12,34 @@
     var LEVEL_TONE = { error: 'twk-bad', warn: 'twk-warn', action: 'twk-good', info: '', verbose: 'twk-faint' };
     var KEY_NAMES = { 13: 'OK', 37: 'Left', 38: 'Up', 39: 'Right', 40: 'Down', 461: 'Back', 27: 'Esc', 403: 'Red', 404: 'Green', 405: 'Yellow', 406: 'Blue', 415: 'Play', 19: 'Pause', 413: 'Stop', 417: 'Forward', 412: 'Rewind' };
     var SCREENS = [[/^#\/player/, 'Player'], [/^#\/detail\/series\/[^/]+\/[^/]+/, 'Episode'], [/^#\/detail/, 'Title page'], [/^#\/discover/, 'Discover'], [/^#\/library/, 'Library'], [/^#\/search/, 'Search'], [/^#\/settings/, 'Stremio settings'], [/^#\/addons/, 'Addons'], [/^#\/login/, 'Login'], [/^#\/?(home)?$/, 'Home']];
-    var SERVICE_AREAS = [[/^(-> |hls-converter - |hls executables|Using app path|EngineFS|Resizing cache)/, 'server', 'verbose'], [/^hls /, 'conversion', null], [/^subsync|^subtitles/, 'subtitles', null], [/^dev mode/, 'devmode', null], [/discover|LAN|network/i, 'network', null], [/torrent|warm|mirror|route/i, 'torrents', null]];
+    var SERVICE_AREAS = [[/^hls /, 'conversion'], [/^subsync|^subtitles/, 'subtitles'], [/^dev mode/, 'devmode'], [/discover|LAN|network/i, 'network'], [/torrent|warm|mirror|route/i, 'torrents']];
+    var ring = config.ring || {};
+    var RING_LIMITS = [ring.important || 200, ring.normal || 300, ring.verbose || 400];
     var detailName = DETAIL[config.detail] !== undefined ? config.detail : 'detailed';
     var detail = DETAIL[detailName];
     var lines = [];
+    var held = [0, 0, 0];
     var box = null;
     var serviceSeq = 0;
     var pendingActivation = null;
     var pending = false;
 
-    function add(area, level, text, at) {
+    function rankOf(line) {
+        // Detail rank of a line's level; an unknown level counts as the most detailed
+        return LEVEL_RANK[line.level] === undefined ? DETAIL.everything : LEVEL_RANK[line.level];
+    }
+
+    function add(area, level, text, at, raw) {
         // Keep every line for test scripts; repaint on the next frame only when this one is shown at the current detail
         var line = { source: area, level: level, text: safeText(text), at: at || Date.now() };
+        if (raw) line.raw = safeText(raw);
+        var rank = rankOf(line);
         lines.push(line);
-        if (lines.length > 300) lines.shift();
+        // Each level has its own share of the ring, so a burst of detail lines never drops a warning
+        if (++held[rank] > RING_LIMITS[rank]) {
+            lines.splice(lines.findIndex(function (old) { return rankOf(old) === rank; }), 1);
+            held[rank]--;
+        }
         window.dispatchEvent(new CustomEvent('twk-debug-line', { detail: line }));
         if (!shows(line) || pending) return;
         pending = true;
@@ -61,18 +75,19 @@
     }
 
     function shows(line, name) {
-        // A line shows when its level ranks within the chosen detail; an unknown level counts as the most detailed
-        var rank = LEVEL_RANK[line.level] === undefined ? DETAIL.everything : LEVEL_RANK[line.level];
-        return rank <= (DETAIL[name] === undefined ? detail : DETAIL[name]);
+        // A line shows when its level ranks within the chosen detail
+        return rankOf(line) <= (DETAIL[name] === undefined ? detail : DETAIL[name]);
     }
 
-    function row(line) {
+    function row(line, withRaw) {
         // One log line in fixed columns: dim time, level tag in its tone, dim area, then the sentence
         var node = shared.element('div', 'twk-log-row');
         node.appendChild(shared.element('span', 'twk-log-time', shared.timeOfDay(line.at)));
         node.appendChild(shared.element('span', 'twk-tag twk-tag-s ' + (LEVEL_TONE[line.level] || LEVEL_TONE.verbose), LEVEL_LABEL[line.level] || String(line.level || LEVEL_LABEL.verbose)));
         node.appendChild(shared.element('span', 'twk-log-area', String(line.source || '')));
-        node.appendChild(shared.element('span', 'twk-log-text', String(line.text || '')));
+        var text = node.appendChild(shared.element('span', 'twk-log-text', String(line.text || '')));
+        // The full reader also shows the original server trace under its sentence
+        if (withRaw && line.raw) text.appendChild(shared.element('span', 'twk-log-raw', line.raw));
         return node;
     }
 
@@ -126,18 +141,17 @@
     }
 
     function serviceLine(line) {
-        // Service lines get an area from their wording; request traces of the bundled server are detail-only
-        var area = 'service';
+        // The service names the area of streaming server lines; the others get one from their wording
+        var area = line.area || 'service';
         var level = line.level === 'log' ? 'info' : line.level || 'info';
-        for (var i = 0; i < SERVICE_AREAS.length; i++) {
+        for (var i = 0; !line.area && i < SERVICE_AREAS.length; i++) {
             if (!SERVICE_AREAS[i][0].test(line.text)) continue;
             area = SERVICE_AREAS[i][1];
-            if (SERVICE_AREAS[i][2] && level === 'info') level = SERVICE_AREAS[i][2];
             break;
         }
         // The answer timing of every conversion request is useful only when looking for a slow start
         if (area === 'conversion' && level === 'info' && /answer .* ms, end/.test(line.text)) level = 'verbose';
-        add(area, level, line.text, line.at);
+        add(area, level, line.text, line.at, line.raw);
     }
 
     function pollService() {
@@ -215,7 +229,7 @@
     }
 
     // Test scripts read every line, whatever the detail setting shows; the log viewer draws them with the same row
-    window.__twkDebug = { lines: lines, action: add, row: row, shows: shows, detail: function () { return detailName; } };
+    window.__twkDebug = { lines: lines, limit: RING_LIMITS[0] + RING_LIMITS[1] + RING_LIMITS[2], action: add, row: row, shows: shows, detail: function () { return detailName; } };
     wrapConsole();
     window.addEventListener('keydown', onKeyDown, true);
     window.addEventListener('click', onClick, true);

@@ -11,17 +11,16 @@ var fs = require('fs');
 var os = require('os');
 var path = require('path');
 var url = require('url');
-var util = require('util');
 var Service = require('webos-service');
 var ReadAhead = require('./readahead');
 var AnswerCache = require('./answercache');
 var subsync = require('./subsync');
 var subtitles = require('./subtitles');
+var serviceLog = require('./servicelog');
 
-var logLines = [];
-var logSeq = 0;
-keepLogs();
+serviceLog.capture();
 var tweaks = loadTweaks();
+serviceLog.setLimits((tweaks.debug || {}).ring);
 var candidates = tweaks.servers.candidates;
 var transcoders = tweaks.servers.transcoders || [];
 var upstream = url.parse(candidates[0]);
@@ -57,44 +56,18 @@ readAhead.mirrorsFor = mirrorsFor;
 var proxyUrl = url.parse(tweaks.servers.coreUrl);
 var PROXY_LOOPBACK = new RegExp('http(%3A|:)(%2F|\\/)(%2F|\\/)' + proxyUrl.hostname.replace(/\./g, '\\.') + '(%3A|:)' + proxyUrl.port, 'gi');
 
-function keepLogs() {
-    // Keep the latest service log lines in memory for the on-screen debug log
-    ['log', 'warn', 'error'].forEach(function(level) {
-        var original = console[level].bind(console);
-        console[level] = function() {
-            // Formatted like the console itself, so objects and errors read as their content
-            logLines.push({ n: ++logSeq, at: Date.now(), level: level, text: safeLogText(util.format.apply(util, arguments)) });
-            if (logLines.length > 300) logLines.shift();
-            original.apply(null, arguments);
-        };
-    });
-}
-
-function safeLogText(text) {
-    // Credentials and personal data never reach the log; media paths stay, since they are what a diagnosis needs
-    return String(text)
-        .replace(/\b(https?:\/\/)([^/\s?#@]+(?::[^/@\s?#]*)?@)/gi, '$1[REDACTED]@')
-        .replace(/([?&](?:access_token|token|key|auth|password|profile|sessionToken|from)=)[^&\s]+/gi, '$1[REDACTED]')
-        .replace(/\bBearer\s+[^\s]+/gi, 'Bearer [REDACTED]')
-        .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[EMAIL]');
-}
-
 function serveLogs(reqUrl, res) {
-    // Filter a copy of the complete ring; keep the global sequence so hidden lines do not repeat
+    // Lines after the cursor up to the asked detail; the global sequence lets a reader skip hidden lines without repeats
     var query = url.parse(reqUrl, true).query;
     var since = query.since === undefined ? 0 : Number(query.since);
     var detail = query.detail === undefined ? (tweaks.debug || {}).detail || 'detailed' : query.detail;
-    var ranks = { error: 0, warn: 0, log: 1, info: 1, verbose: 2 };
-    var maxRank = { essential: 0, detailed: 1, everything: 2 }[detail];
-    if (query.since === '' || !isFinite(since) || since < 0 || Math.floor(since) !== since || maxRank === undefined) {
+    var answer = query.since === '' || !isFinite(since) || since < 0 || Math.floor(since) !== since ? null : serviceLog.read(since, detail);
+    if (!answer) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ error: 'Invalid log cursor or detail level' }));
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ last: logSeq, lines: logLines.filter(function(line) {
-        var rank = ranks[line.level] === undefined ? 1 : ranks[line.level];
-        return line.n > since && rank <= maxRank;
-    }) }));
+    res.end(JSON.stringify(answer));
 }
 
 function familyOf(net) {

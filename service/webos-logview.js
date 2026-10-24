@@ -2,7 +2,6 @@
 (function () {
     var shared = window.__twkShared;
     var t = window.__twkI18n.t;
-    var RING_LIMIT = 300;
     var KEYS = { left: 37, up: 38, right: 39, down: 40, enter: 13 };
     var PASS_KEYS = [461, 27, 8];
     var view = null;
@@ -70,34 +69,25 @@
         requestAnimationFrame(function () { scroll.__twkProgrammaticScroll = false; });
     }
 
-    function sameTail(overlap, shown) {
-        // Whether the last drawn rows are the first lines still retained
-        for (var i = 0; i < overlap; i++) {
-            if (rendered[rendered.length - overlap + i] !== shown[i]) return false;
-        }
-        return true;
-    }
-
     function updateEntries(shown, detail) {
-        // Reuse the rows already drawn: drop the ones the ring evicted, append only the new ones
+        // Reuse the rows already drawn: drop the ones whose line left the ring (each level leaves from its own share), append only the new ones
         if (detail !== renderedDetail) {
             list.textContent = '';
             rendered = [];
             renderedDetail = detail;
         }
-        var overlap = Math.min(rendered.length, shown.length);
-        while (overlap > 0 && !sameTail(overlap, shown)) overlap--;
-        if (overlap === 0 && rendered.length && shown.length) {
-            list.textContent = '';
-            rendered = [];
-        } else if (overlap < rendered.length) {
-            for (var removeCount = rendered.length - overlap; removeCount > 0; removeCount--) list.removeChild(list.firstChild);
-            rendered = overlap ? rendered.slice(-overlap) : [];
-        }
-        for (var index = overlap; index < shown.length; index++) {
-            list.appendChild(window.__twkDebug.row(shown[index]));
-            rendered.push(shown[index]);
-        }
+        var kept = new Set(shown);
+        rendered = rendered.filter(function (entry) {
+            if (kept.has(entry.line)) return true;
+            list.removeChild(entry.node);
+            return false;
+        });
+        var drawn = new Set(rendered.map(function (entry) { return entry.line; }));
+        // New lines are always appended at the end of the ring
+        shown.forEach(function (line) {
+            if (drawn.has(line)) return;
+            rendered.push({ line: line, node: list.appendChild(window.__twkDebug.row(line, true)) });
+        });
     }
 
     function render() {
@@ -108,7 +98,7 @@
         var detail = debug.detail();
         var shown = debug.lines.filter(function (line) { return debug.shows(line, detail); });
         updateEntries(shown, detail);
-        counter.textContent = t('logview.count', { shown: shown.length, retained: debug.lines.length, limit: RING_LIMIT });
+        counter.textContent = t('logview.count', { shown: shown.length, retained: debug.lines.length, limit: debug.limit });
         if (follow) scrollToEnd();
     }
 

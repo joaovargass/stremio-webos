@@ -24,6 +24,7 @@ service/              # webOS service
   launch.js           # Entry point: serves www/ on :8080, proxies to the TV server, LAN fallback per video, HLS and sync routing
   readahead.js        # RAM read-ahead window for torrent files, budget adapted to free memory
   answercache.js      # Short-lived RAM copies of repeated server answers (subtitle hash, track list, HLS start)
+  servicelog.js       # Service log rings per level (debug.ring), streaming server requests as sentences with the raw line kept
   index.html          # Theater entry point (sets __STREMIO_SERVER_URL__ to :8080, loads tweaks.json + saved on/off choices)
   tweaks.json         # Defaults for every tweak, shared by launch.js and the frontend
   webos-shared.js     # Loaded first: panel stack (Back closes the top panel), panel frame and button, notice toast, shared helpers
