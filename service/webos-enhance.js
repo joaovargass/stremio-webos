@@ -19,7 +19,8 @@
             ['enhance.warn.unsupportedAudio', rank.unsupportedAudio],
             ['enhance.warn.remux', rank.remux],
             ['enhance.warn.threeD', rank.threeD],
-            ['enhance.warn.cinemaCopy', rank.cinemaCopy]
+            ['enhance.warn.cinemaCopy', rank.cinemaCopy],
+            ['enhance.warn.audioDescription', rank.audioDescription]
         ].map(function (entry) {
             return { regex: new RegExp(entry[1].pattern), penalty: entry[1].penalty, labelKey: entry[0] };
         });

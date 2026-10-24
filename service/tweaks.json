@@ -131,6 +131,10 @@
             "pattern": "(^|[ ._\\-\\[(])(cam|camrip|hdcam|hd-cam|ts|hdts|hd-ts|telesync|tc|telecine|scr|screener|dvdscr)([ ._\\-\\])]|$)",
             "penalty": 120
         },
+        "audioDescription": {
+            "pattern": "audio[ ._-]?description|\\bdescriptive\\b",
+            "penalty": 90
+        },
         "directLinkBonus": 40,
         "overTvSpeed": {
             "margin": 0.9,
