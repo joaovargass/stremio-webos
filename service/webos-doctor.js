@@ -37,6 +37,9 @@
     var struggleSince = null;
     var progress = [];
     var race = { videoId: null, list: [] };
+    var subtitleLangs = {};
+    var probeQueue = [];
+    var probing = false;
     var pendingResume = null;
     var rates = { tv: { key: 'twk.tvRate', savedAt: 0 }, lan: { key: 'twk.lanRate', savedAt: 0 } };
     rates.tv.value = shared.savedRate(rates.tv.key);
@@ -124,11 +127,47 @@
         return best.stream;
     }
 
+    function probeSubtitles(streams) {
+        // Read the subtitle languages inside each torrent file, one request at a time so the player keeps its connections
+        streams.forEach(function (s) {
+            var key = s && s.infoHash ? window.__twkEvidence.key(s) : null;
+            if (key && subtitleLangs[key] === undefined && probeQueue.indexOf(s) === -1) probeQueue.push(s);
+        });
+        if (probing || !probeQueue.length || !window.__stremioSubs) return;
+        var stream = probeQueue.shift();
+        var key = window.__twkEvidence.key(stream);
+        var server = (window.__STREMIO_SERVER_URL__ || 'http://127.0.0.1:11470').replace(/\/$/, '');
+        var media = server + '/' + stream.infoHash.toLowerCase() + '/' + (stream.fileIdx || 0);
+        probing = true;
+        // The track list needs the file header, which a slow torrent may take a while to deliver
+        fetchJson(server + '/tracks/' + encodeURIComponent(media), config.tracksTimeoutMs).then(function (tracks) {
+            probing = false;
+            if (Array.isArray(tracks)) {
+                subtitleLangs[key] = window.__stremioSubs.textLanguages(tracks);
+                console.info('[doctor] subtitles inside', key + ':', subtitleLangs[key].join(', ') || 'none');
+            }
+            probeSubtitles([]);
+        });
+    }
+
+    function keepsSubtitles(stream, current) {
+        // When only files carry the viewer's subtitle language, a switch goes only to a file known to carry it, unless the current one is known not to
+        var wanted = window.__stremioSubs ? window.__stremioSubs.onlyInFile(decodeURIComponent(currentVideoId())) : null;
+        if (!wanted || !current) return true;
+        var has = function (s) {
+            var langs = subtitleLangs[window.__twkEvidence.key(s)];
+            return langs ? wanted.some(function (lang) { return langs.indexOf(lang) !== -1; }) : null;
+        };
+        return has(current) === false || has(stream) === true;
+    }
+
     function choose(list, current, unplayable, beforePicture) {
         // The candidate worth switching to, or null: one measured clearly better than the current source, any live one when the current cannot play or is proven dead
         var evidence = window.__twkEvidence;
         var now = current ? evidence.assess(current) : { verdict: 'unknown', ratio: null };
-        var best = list.map(function (s) { return { stream: s, result: evidence.assess(s) }; })
+        // A source the TV cannot play leaves whatever subtitles the next one carries
+        var pool = unplayable ? list : list.filter(function (s) { return keepsSubtitles(s, current); });
+        var best = pool.map(function (s) { return { stream: s, result: evidence.assess(s) }; })
             .filter(function (c) { return c.result.verdict !== 'dead'; })
             .sort(function (a, b) { return evidenceValue(b.result) - evidenceValue(a.result); })[0];
         if (!best) return null;
@@ -182,7 +221,8 @@
         if (!next && noPeersAnywhere(list)) return playDirect(videoId, list.length + 1);
         if (!next) {
             state.blocked[videoId] = 'noBetterSource';
-            console.info('[doctor] keeping the current source:', reasonText(reason) + ';', 'current', lastCurrent ? evidenceLine(lastCurrent) : 'not a torrent', '| candidates', list.map(evidenceLine).join(' ; ') || 'none prepared');
+            var noSubtitles = list.filter(function (s) { return !keepsSubtitles(s, lastCurrent); }).length;
+            console.info('[doctor] keeping the current source:', reasonText(reason) + ';', 'current', lastCurrent ? evidenceLine(lastCurrent) : 'not a torrent', '| candidates', list.map(evidenceLine).join(' ; ') || 'none prepared', noSubtitles ? '| ' + noSubtitles + ' skipped: not known to carry the subtitle language' : '');
             return false;
         }
         state.switches[videoId] = used + 1;
@@ -317,6 +357,8 @@
             var list = candidates(results[0] || [], results[1], config.raceCandidates || 2);
             race = { videoId: videoId, list: list };
             list.forEach(function (next) { prepareOn(next, fraction); });
+            // Candidates first: the current file may not have delivered its header yet
+            probeSubtitles(list.concat(results[1] ? [results[1]] : []));
             offerMirrors(results[0] || [], results[1], list);
         });
     }

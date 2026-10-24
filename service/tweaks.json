@@ -185,6 +185,7 @@
         "autoSwitch": true,
         "checkEveryMs": 2000,
         "requestTimeoutMs": 4000,
+        "tracksTimeoutMs": 45000,
         "minBufferS": 12,
         "stalledForMs": 45000,
         "minPlayRatio": 0.5,

@@ -19,6 +19,7 @@
     var firstPickAt = {};
     var lastAudio = [];
     var syncScores = {};
+    var external = { key: null, langs: [] };
     var profile = { audio: null, subs: [], autoSelect: true };
 
     function baseLang(lang) {
@@ -170,6 +171,8 @@
             seen[track.url] = true;
             return true;
         });
+        // Languages addons and OpenSubtitles offer for this video, once the OpenSubtitles lookup has answered
+        if (extraCache[key]) external = { key: key, langs: merged.map(function (track) { return baseLang(track.lang); }) };
         var native = window.__stremioNativeLang || null;
         var hints = (state.selected && state.selected.stream && state.selected.stream.behaviorHints) || {};
         merged.forEach(function (track, i) {
@@ -186,6 +189,19 @@
             selected = Object.assign({}, selected, { stream: Object.assign({}, selected.stream, { subtitles: selected.stream.subtitles.map(throughConverter) }) });
         }
         return Object.assign({}, state, { selected: selected, subtitles: (simple.enabled ? bestPerLanguage(merged) : merged).map(prettify).map(throughConverter) });
+    }
+
+    function onlyInFile(videoId) {
+        // Subtitle languages of the profile no addon offers for this video (all of them until the lookups answered), null when the profile wants none
+        if (!config.enabled || !profile.autoSelect || !profile.subs.length) return null;
+        var known = external.key && external.key.split('/').pop() === videoId ? external.langs : [];
+        var missing = profile.subs.filter(function (lang) { return known.indexOf(lang) === -1; });
+        return missing.length === profile.subs.length ? missing : null;
+    }
+
+    function textLanguages(tracks) {
+        // Languages of the subtitle tracks in a streaming server track list
+        return (tracks || []).filter(function (track) { return track.type === 'text' && track.lang; }).map(function (track) { return baseLang(track.lang); });
     }
 
     function bestPerLanguage(tracks) {
@@ -333,5 +349,5 @@
     // The Netflix-like look is a stylesheet switch on the root element
     if (config.enabled && config.netflixStyle !== false) document.documentElement.classList.add('twk-netflix-subs');
 
-    window.__stremioSubs = { enhancePlayer: enhancePlayer, baseLang: baseLang, scoreOf: scoreOf, cycle: cycleSubtitles, cache: extraCache };
+    window.__stremioSubs = { enhancePlayer: enhancePlayer, baseLang: baseLang, scoreOf: scoreOf, cycle: cycleSubtitles, cache: extraCache, onlyInFile: onlyInFile, textLanguages: textLanguages };
 })();
