@@ -9,6 +9,7 @@
     var shared = window.__twkShared;
     var t = window.__twkI18n.t;
     var NOTICE_MS = 2500;
+    var KEPT_LOOKUPS = 10;
     var LANG_GROUPS = {
         'pt-br': ['pob', 'pt-br', 'pt_br', 'ptbr', 'pb', 'brazilian', 'portuguese (brazil)', 'português (brasil)'],
         pt: ['por', 'pt', 'pt-pt', 'portuguese', 'português']
@@ -20,6 +21,7 @@
     var lastAudio = [];
     var syncScores = {};
     var external = { key: null, langs: [] };
+    var ordered = { key: null, signature: null, subtitles: [] };
     var profile = { audio: null, subs: [], autoSelect: true };
 
     function baseLang(lang) {
@@ -165,6 +167,22 @@
         if (!config.enabled || !state || !Array.isArray(state.subtitles)) return state;
         var key = videoKey(state);
         if (key) fetchOpenSubtitles(state, key);
+        if (key !== ordered.key) forgetVideo(key);
+        var native = window.__stremioNativeLang || null;
+        // The player reads its state many times a second; the same tracks in the same context reuse the last order
+        var stream = (state.selected && state.selected.stream) || {};
+        var signature = [key, (stream.behaviorHints || {}).filename, native, profile.subs.join(','), t('subtitle.label.synced'), extraCache[key] ? extraCache[key].length : 'pending', state.subtitles.map(function (track) { return track && track.url; }).join(',')].join('|');
+        if (signature !== ordered.signature) ordered = { key: key, signature: signature, subtitles: orderTracks(state, key, native) };
+        var selected = state.selected;
+        // Subtitles that come with the stream itself go through the converter as well
+        if (selected && selected.stream && Array.isArray(selected.stream.subtitles)) {
+            selected = Object.assign({}, selected, { stream: Object.assign({}, selected.stream, { subtitles: selected.stream.subtitles.map(throughConverter) }) });
+        }
+        return Object.assign({}, state, { selected: selected, subtitles: ordered.subtitles });
+    }
+
+    function orderTracks(state, key, native) {
+        // Merge the addon and OpenSubtitles tracks, drop errors and duplicates, and order them by language then sync likelihood
         var seen = {};
         var merged = state.subtitles.concat(extraCache[key] || []).filter(function (track) {
             if (!track || !track.url || isError(track) || seen[track.url]) return false;
@@ -173,7 +191,6 @@
         });
         // Languages addons and OpenSubtitles offer for this video, once the OpenSubtitles lookup has answered
         if (extraCache[key]) external = { key: key, langs: merged.map(function (track) { return baseLang(track.lang); }) };
-        var native = window.__stremioNativeLang || null;
         var hints = (state.selected && state.selected.stream && state.selected.stream.behaviorHints) || {};
         merged.forEach(function (track, i) {
             track.__order = i;
@@ -183,12 +200,17 @@
         merged.sort(function (a, b) {
             return rank(a.lang, native) - rank(b.lang, native) || scoreOf(b) - scoreOf(a) || a.__order - b.__order;
         });
-        var selected = state.selected;
-        // Subtitles that come with the stream itself go through the converter as well
-        if (selected && selected.stream && Array.isArray(selected.stream.subtitles)) {
-            selected = Object.assign({}, selected, { stream: Object.assign({}, selected.stream, { subtitles: selected.stream.subtitles.map(throughConverter) }) });
-        }
-        return Object.assign({}, state, { selected: selected, subtitles: (simple.enabled ? bestPerLanguage(merged) : merged).map(prettify).map(throughConverter) });
+        return (simple.enabled ? bestPerLanguage(merged) : merged).map(prettify).map(throughConverter);
+    }
+
+    function forgetVideo(key) {
+        // A new video starts with fresh scores; lookups of the last few videos stay for a quick return to them
+        syncScores = {};
+        var keys = Object.keys(extraCache).filter(function (other) { return other !== key; });
+        keys.slice(0, Math.max(0, keys.length - KEPT_LOOKUPS)).forEach(function (old) {
+            delete extraCache[old];
+            delete pending[old];
+        });
     }
 
     function onlyInFile(videoId) {
