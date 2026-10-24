@@ -12,6 +12,8 @@
     var KEYS = { up: 38, down: 40, left: 37, right: 39, enter: 13, back: 461, escape: 27 };
     var QUALITY = ['best', '2160p', '1080p', '720p'];
     var DETAIL = ['essential', 'detailed', 'everything'];
+    var WIDTHS = ['narrow', 'wide', 'full'];
+    var POSITIONS = ['bottomLeft', 'topLeft', 'topRight', 'bottomRight'];
     var GROUPS = [
         { title: 'settings.simple', column: 0, items: [
             ['simple.enabled'],
@@ -63,6 +65,8 @@
         { title: 'settings.debug', column: 1, items: [
             ['debug.overlay'],
             ['debug.detail', DETAIL, 'detail'],
+            ['debug.width', WIDTHS, 'width'],
+            ['debug.position', POSITIONS, 'position'],
             ['debug.openLog', null, null, 'action']
         ] }
     ];
@@ -71,6 +75,7 @@
     var groupTitles = [];
     var focus = 0;
     var open = false;
+    var holdTimer = null;
 
     function readOverrides() {
         // Saved choices, empty when storage is unavailable
@@ -154,18 +159,31 @@
             window.__twkLogView.open();
             return;
         }
-        entry.on = entry.options ? entry.options[(entry.options.indexOf(entry.on) + 1) % entry.options.length] : !entry.on;
+        set(entry.key, entry.options ? entry.options[(entry.options.indexOf(entry.on) + 1) % entry.options.length] : !entry.on);
+    }
+
+    function set(key, value) {
+        // Save one choice on the TV, apply it at once and show it on its row
         var overrides = readOverrides();
-        overrides[entry.key] = entry.on;
+        overrides[key] = value;
         var saved = true;
         try { localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides)); } catch (_e) { saved = false; }
-        apply(entry.key, entry.on);
-        paint();
+        rows.forEach(function (entry) { if (entry.key === key) entry.on = value; });
+        apply(key, value);
+        if (view) paint();
         if (window.__twkDebug) {
-            var value = entry.options ? entry.on : entry.on ? 'enabled' : 'disabled';
-            var message = (saved ? 'Saved setting ' : 'Could not save setting ') + entry.key;
-            window.__twkDebug.action('settings', saved ? 'action' : 'warn', saved ? message + ' as ' + value : message);
+            var shown = typeof value === 'boolean' ? (value ? 'enabled' : 'disabled') : value;
+            var message = (saved ? 'Saved setting ' : 'Could not save setting ') + key;
+            window.__twkDebug.action('settings', saved ? 'action' : 'warn', saved ? message + ' as ' + shown : message);
         }
+    }
+
+    function moveLog() {
+        // Holding the settings key moves the on-screen log to the next corner, clockwise
+        var debug = (window.STREMIO_TWEAKS || {}).debug || {};
+        var next = POSITIONS[(Math.max(0, POSITIONS.indexOf(debug.position)) + 1) % POSITIONS.length];
+        set('debug.position', next);
+        shared.notify(t('settings.logMoved', { position: t('choice.position.' + next) }), 2000);
     }
 
     function apply(key, value) {
@@ -201,13 +219,24 @@
         // The colour key opens the panel; while open it owns the arrows, OK and Back
         var code = e.keyCode;
         if (!open) {
-            if (code === config.hotkey) {
-                e.preventDefault();
-                e.stopPropagation();
-                show();
+            if (code !== config.hotkey) return;
+            e.preventDefault();
+            e.stopPropagation();
+            // A short press opens the panel when the key comes up; a hold moves the on-screen log instead
+            if (e.type === 'keyup') {
+                if (holdTimer) show();
+                clearTimeout(holdTimer);
+                holdTimer = null;
+            } else if (!e.repeat && !holdTimer) {
+                holdTimer = setTimeout(function () {
+                    holdTimer = null;
+                    if (((window.STREMIO_TWEAKS || {}).debug || {}).overlay) moveLog();
+                    else show();
+                }, config.holdMs || 600);
             }
             return;
         }
+        if (e.type === 'keyup') return;
         if (window.__twkPanels.current() !== 'settings') return;
         if ([KEYS.up, KEYS.down, KEYS.left, KEYS.right, KEYS.enter, KEYS.back, KEYS.escape, config.hotkey].indexOf(code) === -1) return;
         e.preventDefault();
@@ -222,6 +251,7 @@
     }
 
     window.addEventListener('keydown', onKey, true);
+    window.addEventListener('keyup', onKey, true);
 
     window.__stremioSettings = {
         toggle: function () { return open ? hide() : show(); }

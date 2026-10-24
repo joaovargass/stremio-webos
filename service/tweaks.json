@@ -226,7 +226,8 @@
         "resumeHint": true
     },
     "settings": {
-        "hotkey": 405
+        "hotkey": 405,
+        "holdMs": 600
     },
     "hints": {
         "firstRunToast": true
@@ -257,6 +258,8 @@
     "debug": {
         "overlay": true,
         "detail": "detailed",
+        "width": "wide",
+        "position": "bottomLeft",
         "lines": 10,
         "pollMs": 1000,
         "ring": {

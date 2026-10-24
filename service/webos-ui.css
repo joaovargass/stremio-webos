@@ -76,7 +76,9 @@
     --twk-width-m: 42vw;
     --twk-width-l: 60vw;
     --twk-width-xl: 70vw;
-    --twk-width-log: 52vw;
+    --twk-width-log-narrow: 40vw;
+    --twk-width-log-wide: 70vw;
+    --twk-width-log-full: 96vw;
     --twk-height-panel: 90vh;
     --twk-height-list: 74vh;
     --twk-subtitles-lift: 6vh;
@@ -619,9 +621,7 @@ html[data-twk-top]:not([data-twk-top=""]) .twk-toast.twk-visible {
 
 .twk-debug {
     position: fixed;
-    left: var(--twk-inset-l);
-    bottom: var(--twk-debug-lift);
-    width: var(--twk-width-log);
+    width: var(--twk-width-log-wide);
     padding: var(--twk-space-m) var(--twk-inset-s);
     border-radius: var(--twk-radius-m);
     background: var(--twk-surface-raised);
@@ -635,6 +635,15 @@ html[data-twk-top]:not([data-twk-top=""]) .twk-toast.twk-visible {
     pointer-events: none;
     transition: opacity var(--twk-fade) ease;
 }
+
+/* Width and corner chosen in the settings (debug.width, debug.position) */
+.twk-debug-narrow { width: var(--twk-width-log-narrow); }
+.twk-debug-wide { width: var(--twk-width-log-wide); }
+.twk-debug-full { width: var(--twk-width-log-full); }
+.twk-debug-bottomLeft { left: var(--twk-inset-l); bottom: var(--twk-debug-lift); }
+.twk-debug-topLeft { left: var(--twk-inset-l); top: var(--twk-edge-y); }
+.twk-debug-bottomRight { right: var(--twk-inset-l); bottom: var(--twk-debug-lift); }
+.twk-debug-topRight { right: var(--twk-inset-l); top: var(--twk-edge-y); }
 
 html[data-twk-top]:not([data-twk-top=""]) .twk-debug {
     opacity: 0;

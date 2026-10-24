@@ -7,6 +7,8 @@
     var config = (window.STREMIO_TWEAKS || {}).debug || {};
     var shared = window.__twkShared;
     var DETAIL = { essential: 0, detailed: 1, everything: 2 };
+    var WIDTHS = ['narrow', 'wide', 'full'];
+    var POSITIONS = ['bottomLeft', 'topLeft', 'topRight', 'bottomRight'];
     var LEVEL_RANK = { error: 0, warn: 0, action: 0, info: 1, verbose: 2 };
     var LEVEL_LABEL = { error: 'ERROR', warn: 'WARN', action: 'ACTION', info: 'INFO', verbose: 'MORE' };
     var LEVEL_TONE = { error: 'twk-bad', warn: 'twk-warn', action: 'twk-good', info: '', verbose: 'twk-faint' };
@@ -106,8 +108,10 @@
         if (!config.overlay) return;
         if (!box) {
             if (!document.body) return;
-            box = document.body.appendChild(shared.element('div', 'twk-debug'));
+            box = document.body.appendChild(shared.element('div'));
         }
+        // Width and corner follow the settings, which can change them while the card is shown
+        box.className = 'twk-debug twk-debug-' + (WIDTHS.indexOf(config.width) !== -1 ? config.width : 'wide') + ' twk-debug-' + (POSITIONS.indexOf(config.position) !== -1 ? config.position : 'bottomLeft');
         box.textContent = '';
         visibleLines().forEach(function (line) { box.appendChild(row(line)); });
     }
@@ -176,7 +180,7 @@
             detailName = e.detail.value;
             detail = DETAIL[detailName];
         }
-        if (key !== 'debug.detail' && key !== 'debug.overlay') return;
+        if (!/^debug\.(detail|overlay|width|position)$/.test(key)) return;
         if (!config.overlay && box) {
             box.remove();
             box = null;
