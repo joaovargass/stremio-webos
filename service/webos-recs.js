@@ -370,9 +370,9 @@
     }
 
     function rankResults(metas) {
-        // Search results ordered by the viewer's taste, exact title matches first
+        // Catalog titles (already compact) in the order of the viewer's taste
         return loadProfile().then(function (profile) {
-            return metas.map(compact).sort(function (a, b) { return score(b, profile) - score(a, profile); });
+            return metas.slice().sort(function (a, b) { return score(b, profile) - score(a, profile); });
         });
     }
 

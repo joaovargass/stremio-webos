@@ -1,7 +1,8 @@
 // Netflix-like shell over the Stremio screens it replaces: a slim left menu that expands when focused (Search, Home,
-// Series, Movies, My List, Settings) and a content area where webos-home.js draws Home, Series, Movies or My List.
-// The Stremio routes stay the same (#/, #/home, #/discover/series, #/discover/movie, #/library), so the router and
-// Back keep working; while the layer shows, it owns the arrows, OK and Back, and the Stremio screen under it is hidden.
+// Series, Movies, My List, Settings) and a content area where webos-home.js draws Home, Series, Movies, My List and
+// title details, and webos-search.js the search. The Stremio routes stay the same (#/, #/home, #/discover/series,
+// #/discover/movie, #/library, #/search, #/detail/<type>/<id>), so the router and Back keep working; while the layer
+// shows, it owns the arrows, OK and Back, and the Stremio screen under it is hidden.
 (function () {
     var config = (window.STREMIO_TWEAKS || {}).netflix || {};
     var shared = window.__twkShared;
@@ -36,7 +37,7 @@
         var route = String(hash || '').split('?')[0];
         var details = /^#\/detail\/(movie|series)\/([^/]+)$/.exec(route);
         if (details) return { name: 'details', params: { type: details[1], id: decodeURIComponent(details[2]) }, key: 'details:' + details[2] };
-        var name = /^#\/?(home)?$/.test(route) ? 'home' : /^#\/discover\/series/.test(route) ? 'series' : /^#\/discover\/movie/.test(route) ? 'movie' : /^#\/library/.test(route) ? 'mylist' : null;
+        var name = /^#\/?(home)?$/.test(route) ? 'home' : /^#\/discover\/series/.test(route) ? 'series' : /^#\/discover\/movie/.test(route) ? 'movie' : /^#\/library/.test(route) ? 'mylist' : /^#\/search/.test(route) ? 'search' : null;
         return name ? { name: name, params: {}, key: name } : null;
     }
 
@@ -115,6 +116,7 @@
             content.textContent = '';
             screen = window.__twkScreens.create(target.name, content, { openMenu: function () { setMenuOpen(true); } }, target.params);
             screen.key = target.key;
+            screen.name = target.name;
         }
         setMenuOpen(false);
     }

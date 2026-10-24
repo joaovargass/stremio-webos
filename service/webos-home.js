@@ -65,6 +65,8 @@
 
     window.__twkScreens = {
         create: function (name, container, shell, params) {
+            // Search has its own screen with a keyboard; every other screen is a billboard with rows
+            if (name === 'search') return window.__twkSearchScreen(container, shell);
             return new Screen(name, container, shell, params || {});
         }
     };

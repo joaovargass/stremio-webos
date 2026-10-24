@@ -33,6 +33,7 @@ service/              # webOS service
   webos-layer.js      # Netflix-like shell over Home, Series, Movies and My List: left menu, route takeover, key ownership
   webos-home.js       # Netflix-like screens: billboard carousel with the trailer behind the title, rows, Continue Watching, My List
   webos-details.js    # Netflix-like title details: Play or Resume (best source at once), My List, Start over, All sources, seasons, More like this
+  webos-search.js     # Netflix-like search: on-screen keyboard, picks before typing, results by name match then taste
   webos-enhance.js    # Points the profile at the proxy, adds trackers, ranks streams, prewarms the recommended one
   webos-retry.js      # Stall recovery and in-player HLS fallback (no external player)
   webos-subs.js       # Subtitle list cleanup, OpenSubtitles lookup, sync-likelihood ranking, automatic choice, Netflix style

@@ -151,6 +151,13 @@
     --twk-nf-trailer-top: -12%;
     --twk-nf-trailer-height: 124%;
     --twk-nf-status-bottom: 6vh;
+    --twk-nf-keyboard-w: 30vw;
+    --twk-nf-key: 4vw;
+    --twk-nf-key-gap: 0.4vw;
+    --twk-nf-search-tile-w: 13vw;
+    --twk-nf-search-tile-h: 7.3vw;
+    --twk-nf-search-row: calc(var(--twk-nf-search-tile-h) + 3vh);
+    --twk-nf-key-bg: rgba(255, 255, 255, 0.08);
 }
 
 /* Tones: text colour everywhere; tags and bars add their tone background */
@@ -1098,4 +1105,76 @@ html[data-twk-netflix="on"] #root {
 .twk-nf-progress-fill {
     height: 100%;
     background: var(--twk-nf-progress-color);
+}
+
+/* Netflix-like search: keyboard on the left, a grid of titles on the right */
+.twk-nf-search {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    gap: var(--twk-nf-pad);
+    padding: var(--twk-nf-info-top-browsing) var(--twk-nf-pad) 0;
+}
+
+.twk-nf-keyboard {
+    flex: none;
+    width: var(--twk-nf-keyboard-w);
+}
+
+.twk-nf-query {
+    min-height: var(--twk-nf-key);
+    margin-bottom: var(--twk-space-l);
+    border-bottom: var(--twk-hairline) solid var(--twk-muted);
+    font-size: var(--twk-nf-title);
+    font-weight: var(--twk-weight-bold);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.twk-nf-keys {
+    display: grid;
+    grid-template-columns: repeat(6, var(--twk-nf-key));
+    gap: var(--twk-nf-key-gap);
+}
+
+.twk-nf-key {
+    height: var(--twk-nf-key);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--twk-radius-s);
+    background: var(--twk-nf-key-bg);
+    color: var(--twk-text-soft);
+    font-size: var(--twk-text-xl);
+    font-weight: var(--twk-weight-bold);
+}
+
+.twk-nf-key-wide {
+    grid-column: span 3;
+}
+
+.twk-nf-key.twk-focus {
+    background: var(--twk-nf-button-light);
+    color: var(--twk-nf-button-light-text);
+}
+
+.twk-nf-results {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.twk-nf-grid {
+    display: grid;
+    grid-template-columns: repeat(4, var(--twk-nf-search-tile-w));
+    grid-auto-rows: var(--twk-nf-search-tile-h);
+    row-gap: calc(var(--twk-nf-search-row) - var(--twk-nf-search-tile-h));
+    column-gap: var(--twk-nf-tile-gap);
+    transition: transform var(--twk-nf-move) var(--twk-ease);
+}
+
+.twk-nf-grid .twk-nf-tile {
+    width: var(--twk-nf-search-tile-w);
+    height: var(--twk-nf-search-tile-h);
 }
