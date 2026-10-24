@@ -192,11 +192,9 @@ function lanTranscoder(source) {
     return mediaHost(url.parse(best), source) ? url.parse(best) : null;
 }
 
-function pickTranscoder(source, heavy) {
-    // Audio conversions and probes run on the TV; a picture re-encode, too slow for the TV in real time, goes to a LAN server when one answers
-    var local = localTranscoder();
-    var lan = lanTranscoder(source);
-    return heavy ? lan || local : local || lan;
+function pickTranscoder(source) {
+    // A computer that answers converts, being much faster than the TV; the TV converts by itself when none does
+    return lanTranscoder(source) || localTranscoder();
 }
 
 function transcoderFor(req, source) {
@@ -205,7 +203,7 @@ function transcoderFor(req, source) {
     var pinned = id && id !== 'probe' ? hlsSessions[id] : null;
     // A session stays on its server only while that server may still be used: the TV, or a LAN server that answers and is allowed
     if (pinned && (isLocal(pinned) || (serverStatus[url.format(pinned)] && allowed(url.format(pinned))))) return pinned;
-    var target = pickTranscoder(source, /[?&]forceTranscoding=/.test(req.url));
+    var target = pickTranscoder(source);
     if (id && id !== 'probe' && target) {
         hlsSessions[id] = target;
         // Only recent sessions matter; older ids are forgotten
@@ -722,31 +720,33 @@ function dropServer(server) {
 }
 
 function adoptServer(found, info) {
-    // Use the discovered server right after the TV, and as transcoder since it is the ffmpeg build
+    // A computer that answers streams and converts first, with the TV as the fallback
     console.log('[network] Found a streaming server at ' + found + (info.name ? ' (' + info.name + ')' : ''));
     // Servers found earlier on another network or address are gone, so they leave the list instead of piling up
     Object.keys(discovered).forEach(function(old) { if (old !== found && !serverStatus[old]) dropServer(old); });
     discovered[found] = true;
     serverInfo[found] = info;
-    if (candidates.indexOf(found) === -1) {
-        var firstRemote = candidates.filter(function(c) { return !isLocal(url.parse(c)); })[0];
-        candidates.splice(firstRemote ? candidates.indexOf(firstRemote) : candidates.length, 0, found);
-    }
+    if (candidates.indexOf(found) === -1) candidates.unshift(found);
     if (transcoders.indexOf(found) === -1) transcoders.unshift(found);
     serverStatus[found] = true;
     applyBestUpstream();
 }
 
 function applyBestUpstream() {
-    // Keep the first candidate, in configured order, that answered
+    // Keep the first candidate, in order, that answered: a found computer first, then the TV
     var best = candidates.filter(function(candidate) { return serverStatus[candidate] && allowed(candidate); })[0];
     if (!best) return;
     var next = url.parse(best);
-    // Never move the proxy while a video is being served from the current upstream
-    if (next.host !== upstream.host && activeStreams === 0) {
-        console.log('[network] New videos now stream from ' + best);
-        upstream = next;
-    }
+    if (next.host === upstream.host) return;
+    // A video keeps its server while it plays, unless that server stopped answering: then the open window continues on the new one
+    var current = candidates.filter(function(candidate) { return url.parse(candidate).host === upstream.host; })[0];
+    var currentLost = !current || !serverStatus[current] || !allowed(current);
+    if (activeStreams > 0 && !currentLost) return;
+    console.log('[network] ' + (activeStreams > 0 ? 'The playing video continues from ' : 'New videos now stream from ') + best + (currentLost ? ' (' + url.format(upstream) + ' stopped answering)' : ''));
+    upstream = next;
+    var memoryWindow = readAhead.buffer;
+    var playing = memoryWindow && INFO_HASH.exec(memoryWindow.path);
+    if (activeStreams > 0 && playing && !routes[playing[1].toLowerCase()]) readAhead.reroute(playing[1].toLowerCase(), next);
 }
 
 var service = new Service('com.joaovargass.stremiodbg.server');
