@@ -12,6 +12,7 @@
     var LEVEL_TONE = { error: 'twk-bad', warn: 'twk-warn', action: 'twk-good', info: '', verbose: 'twk-faint' };
     var KEY_NAMES = { 13: 'OK', 37: 'Left', 38: 'Up', 39: 'Right', 40: 'Down', 461: 'Back', 27: 'Esc', 403: 'Red', 404: 'Green', 405: 'Yellow', 406: 'Blue', 415: 'Play', 19: 'Pause', 413: 'Stop', 417: 'Forward', 412: 'Rewind' };
     var SCREENS = [[/^#\/player/, 'Player'], [/^#\/detail\/series\/[^/]+\/[^/]+/, 'Episode'], [/^#\/detail/, 'Title page'], [/^#\/discover/, 'Discover'], [/^#\/library/, 'Library'], [/^#\/search/, 'Search'], [/^#\/settings/, 'Stremio settings'], [/^#\/addons/, 'Addons'], [/^#\/login/, 'Login'], [/^#\/?(home)?$/, 'Home']];
+    var CAUSES = [[/webos-doctor/, 'the playback doctor'], [/webos-sources/, 'the source picker'], [/webos-subs/, 'the subtitle tweak'], [/webos-settings/, 'the tweak settings'], [/login\.chunk/, 'the login screen'], [/<anonymous>/, 'a script outside the app']];
     var ring = config.ring || {};
     var RING_LIMITS = [ring.important || 200, ring.normal || 300, ring.verbose || 400];
     var detailName = DETAIL[config.detail] !== undefined ? config.detail : 'detailed';
@@ -168,6 +169,12 @@
         return section ? '#/' + section[1] : '#/';
     }
 
+    function causeName(frames) {
+        // Who asked for a route change, read from the code that called the router
+        for (var i = 0; i < CAUSES.length; i++) if (CAUSES[i][0].test(frames)) return CAUSES[i][1];
+        return 'the app';
+    }
+
     function onKeyDown(e) {
         // Every key is low-level evidence; OK and the colour and media keys also log what they activated, once settled
         var name = KEY_NAMES[e.keyCode] || 'key ' + e.keyCode;
@@ -229,8 +236,8 @@
         // Each route change remembers how it happened and the code that asked for it, so an unexpected one can be traced
         var original = history[name];
         history[name] = function () {
-            var caller = (new Error().stack || '').split('\n').slice(2, 4).map(function (line) { return line.trim().replace(/^at /, '').replace(/https?:\/\/[^/]+\//, ''); }).join(' < ');
-            navCause = (name === 'pushState' ? 'opened' : 'replaced') + ' by ' + caller;
+            var frames = (new Error().stack || '').split('\n').slice(2, 5).map(function (line) { return line.trim().replace(/^at /, '').replace(/https?:\/\/[^/]+\//, ''); });
+            navCause = (name === 'pushState' ? 'opened' : 'replaced') + ' by ' + causeName(frames.join(' ')) + ' (' + frames.slice(0, 2).join(' < ') + ')';
             return original.apply(this, arguments);
         };
     });
