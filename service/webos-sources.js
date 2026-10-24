@@ -329,14 +329,19 @@
     }
 
     function autoPlayEpisode() {
-        // An episode chosen in the episode list plays its best source at once; Back then returns to the episode list
+        // An episode or a movie played from its title page plays its best source at once; Back then returns to the title page
         if (!simple.enabled || simple.autoPlayEpisodes === false || !window.__stremioHistory) return;
         var entries = window.__stremioHistory.entries();
         var current = entries[entries.length - 1] || '';
         var previous = entries[entries.length - 2] || '';
-        var match = /^#\/detail\/series\/([^/?]+)\/([^/?]+)/.exec(current);
-        if (!match || previous.split('?')[0] !== '#/detail/series/' + match[1]) return;
-        var videoId = decodeURIComponent(match[2]);
+        var match = /^#\/detail\/(movie|series)\/([^/?]+)\/([^/?]+)/.exec(current);
+        if (!match || previous.split('?')[0] !== '#/detail/' + match[1] + '/' + match[2]) return;
+        // All sources asks for the list itself, once
+        if (window.__twkNoAutoPlay) {
+            window.__twkNoAutoPlay = false;
+            return;
+        }
+        var videoId = decodeURIComponent(match[3]);
         var started = Date.now();
         var wait = setInterval(function () {
             // The ranked list of this episode arrives once the addons answered

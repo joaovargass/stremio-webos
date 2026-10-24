@@ -32,13 +32,12 @@
     var menuOpen = false;
 
     function screenOf(hash) {
-        // Which of the replaced screens a route shows, or null for a Stremio screen the layer leaves alone
+        // Which of the replaced screens a route shows, with its parameters, or null for a Stremio screen the layer leaves alone
         var route = String(hash || '').split('?')[0];
-        if (/^#\/?(home)?$/.test(route)) return 'home';
-        if (/^#\/discover\/series/.test(route)) return 'series';
-        if (/^#\/discover\/movie/.test(route)) return 'movie';
-        if (/^#\/library/.test(route)) return 'mylist';
-        return null;
+        var details = /^#\/detail\/(movie|series)\/([^/]+)$/.exec(route);
+        if (details) return { name: 'details', params: { type: details[1], id: decodeURIComponent(details[2]) }, key: 'details:' + details[2] };
+        var name = /^#\/?(home)?$/.test(route) ? 'home' : /^#\/discover\/series/.test(route) ? 'series' : /^#\/discover\/movie/.test(route) ? 'movie' : /^#\/library/.test(route) ? 'mylist' : null;
+        return name ? { name: name, params: {}, key: name } : null;
     }
 
     function enabled() {
@@ -107,15 +106,15 @@
         window.__stremioDoctor.navigate(item.route);
     }
 
-    function show(name) {
+    function show(target) {
         // Draw a screen in the content area and hide the Stremio screen under the layer
         if (!root) build();
         document.documentElement.setAttribute('data-twk-netflix', 'on');
-        if (!screen || screen.name !== name) {
+        if (!screen || screen.key !== target.key) {
             if (screen && screen.destroy) screen.destroy();
             content.textContent = '';
-            screen = window.__twkScreens.create(name, content, { openMenu: function () { setMenuOpen(true); } });
-            screen.name = name;
+            screen = window.__twkScreens.create(target.name, content, { openMenu: function () { setMenuOpen(true); } }, target.params);
+            screen.key = target.key;
         }
         setMenuOpen(false);
     }
@@ -130,8 +129,8 @@
 
     function onRoute() {
         // Each route change decides whether the layer shows and which screen it draws
-        var name = enabled() ? screenOf(location.hash) : null;
-        if (name) show(name);
+        var target = enabled() ? screenOf(location.hash) : null;
+        if (target) show(target);
         else if (screen) hide();
     }
 

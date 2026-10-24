@@ -44,8 +44,9 @@
         });
     }
 
-    function loadPage(name) {
-        // The page of a screen: My List from the library, the others from the engine with Continue Watching on top
+    function loadPage(name, params) {
+        // The page of a screen: title details, My List from the library, the others from the engine with Continue Watching on top
+        if (name === 'details') return window.__twkDetails.load(params.type, params.id);
         if (name === 'mylist') return myListRows();
         var type = name === 'home' ? null : name;
         return Promise.all([window.__twkRecs.pageFor(type || 'home'), continueRow(type)]).then(function (results) {
@@ -62,13 +63,14 @@
     }
 
     window.__twkScreens = {
-        create: function (name, container, shell) {
-            return new Screen(name, container, shell);
+        create: function (name, container, shell, params) {
+            return new Screen(name, container, shell, params || {});
         }
     };
 
-    function Screen(name, container, shell) {
+    function Screen(name, container, shell, params) {
         this.name = name;
+        this.params = params;
         this.shell = shell;
         this.mode = 'billboard';
         this.button = 0;
@@ -80,9 +82,11 @@
         this.alive = true;
         this.build(container);
         var self = this;
-        loadPage(name).then(function (page) {
+        loadPage(name, params).then(function (page) {
             if (!self.alive) return;
             self.page = page;
+            page.onButtons = function () { self.renderButtons(); self.paint(); };
+            self.renderButtons();
             self.renderRows();
             self.mode = page.billboard.length ? 'billboard' : 'rows';
             self.showSlide(0);
@@ -105,13 +109,28 @@
         this.titleText = info.appendChild(element('div', 'twk-nf-title'));
         this.line = info.appendChild(element('div', 'twk-nf-line'));
         this.synopsis = info.appendChild(element('div', 'twk-nf-synopsis'));
-        var buttons = this.buttons = info.appendChild(element('div', 'twk-nf-buttons'));
-        this.playButton = buttons.appendChild(element('div', 'twk-nf-button twk-nf-play', t('netflix.play')));
-        this.infoButton = buttons.appendChild(element('div', 'twk-nf-button', t('netflix.moreInfo')));
+        this.buttonBox = info.appendChild(element('div', 'twk-nf-buttons'));
+        this.buttonNodes = [];
         this.dots = info.appendChild(element('div', 'twk-nf-dots'));
         this.status = this.root.appendChild(element('div', 'twk-nf-status', t('netflix.loading')));
         this.rowsBox = this.root.appendChild(element('div', 'twk-nf-rows'));
         this.logo.addEventListener('error', function () { this.style.display = 'none'; });
+    };
+
+    Screen.prototype.renderButtons = function () {
+        // The buttons of the billboard: Play and More info on browsing screens, the page's own on title details
+        var self = this;
+        this.actions = this.page.buttons || [
+            { label: t('netflix.play'), run: function () { self.open(true); } },
+            { label: t('netflix.moreInfo'), run: function () { self.open(false); } }
+        ];
+        this.buttonBox.textContent = '';
+        this.buttonNodes = this.actions.map(function (action, i) {
+            var node = self.buttonBox.appendChild(element('div', 'twk-nf-button', action.label));
+            node.addEventListener('mouseenter', function () { self.mode = 'billboard'; self.setButton(i); });
+            node.addEventListener('click', function (e) { e.stopPropagation(); action.run(); });
+            return node;
+        });
     };
 
     Screen.prototype.renderRows = function () {
@@ -157,7 +176,7 @@
         var meta = this.page.billboard[this.slide];
         var withTrailer = config.trailers !== false && !!meta.trailer;
         if (withTrailer) this.timers.trailer = setTimeout(function () { self.playTrailer(meta.trailer); }, config.trailerDelayMs || 3000);
-        this.timers.next = setTimeout(function () { self.showSlide(self.slide + 1); }, withTrailer ? config.trailerMaxMs || 60000 : config.slideMs || 15000);
+        if (this.page.billboard.length > 1) this.timers.next = setTimeout(function () { self.showSlide(self.slide + 1); }, withTrailer ? config.trailerMaxMs || 60000 : config.slideMs || 15000);
     };
 
     Screen.prototype.playTrailer = function (id) {
@@ -216,8 +235,7 @@
         // Mode, focus marks, row and track positions, and images near the focus
         var self = this;
         this.root.classList.toggle('twk-nf-browsing', this.mode === 'rows');
-        this.playButton.classList.toggle('twk-focus', this.mode === 'billboard' && this.button === 0 && this.active !== false);
-        this.infoButton.classList.toggle('twk-focus', this.mode === 'billboard' && this.button === 1 && this.active !== false);
+        this.buttonNodes.forEach(function (node, i) { node.classList.toggle('twk-focus', self.mode === 'billboard' && self.button === i && self.active !== false); });
         this.rowsBox.style.transform = 'translateY(calc(-' + (this.mode === 'rows' ? this.row : 0) + ' * var(--twk-nf-row-step)))';
         (this.rowNodes || []).forEach(function (node, r) {
             var col = self.cols[r] || 0;
@@ -242,9 +260,10 @@
     };
 
     Screen.prototype.open = function (playNow) {
-        // Open the focused title: resume a started one, else its details (or play it at once from the billboard)
+        // Open the focused title: its own action (an episode), resume a started one, else its details (or play it at once from the billboard)
         var entry = this.mode === 'billboard' ? { meta: this.page.billboard[this.slide] } : this.focused();
         if (!entry || !entry.meta) return;
+        if (entry.run) return entry.run();
         window.__twkRecs.noteOpened(entry.meta.id);
         if (entry.link) return window.__stremioDoctor.navigate(entry.link.replace(/^#/, ''));
         window.__stremioDoctor.navigate('/detail/' + entry.meta.type + '/' + encodeURIComponent(entry.meta.id) + (playNow && entry.meta.type === 'movie' ? '/' + encodeURIComponent(entry.meta.id) : ''));
@@ -265,11 +284,11 @@
 
     Screen.prototype.billboardKey = function (code, repeat) {
         // Left and Right move between the buttons and through the carousel, Down goes to the rows
-        if (code === KEYS.left) return this.button === 1 ? this.setButton(0) : this.shell.openMenu();
-        if (code === KEYS.right) return this.button === 0 ? this.setButton(1) : this.showSlide(this.slide + 1);
+        if (code === KEYS.left) return this.button > 0 ? this.setButton(this.button - 1) : this.shell.openMenu();
+        if (code === KEYS.right) return this.button < this.buttonNodes.length - 1 ? this.setButton(this.button + 1) : this.page.billboard.length > 1 ? this.showSlide(this.slide + 1) : null;
         if (code === KEYS.down && this.page.rows.length) return this.focusTile(0, this.cols[0] || 0);
-        if (code === KEYS.enter && !repeat) return this.open(this.button === 0);
-        if (code === KEYS.back || code === KEYS.escape) return this.shell.openMenu();
+        if (code === KEYS.enter && !repeat && this.actions[this.button]) return this.actions[this.button].run();
+        if (code === KEYS.back || code === KEYS.escape) return this.page.back ? this.page.back() : this.shell.openMenu();
     };
 
     Screen.prototype.setButton = function (index) {
