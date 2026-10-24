@@ -229,7 +229,7 @@ function setRoute(hash, target) {
     var seamless = readAhead.reroute(hash, target ? url.parse(target) : upstream);
     // Only this torrent's own window is dropped; a video playing from another file keeps its buffer
     if (!seamless) readAhead.resetFor(hash);
-    console.log('route', hash, '->', target || 'default', seamless ? '(seamless)' : '');
+    console.log('[torrents] Streaming ' + serviceLog.torrentName(hash) + (target ? ' from ' + target : ' from the default server again') + (seamless ? ', without reloading the player' : ''));
     return seamless;
 }
 
@@ -261,7 +261,11 @@ function warmTorrent(hash, server, query) {
     var filePath = '/' + hash + '/' + (parseInt(query.idx, 10) || 0);
     touchTorrent(hash, server, null);
     var fraction = Math.min(Math.max(parseFloat(query.at) || 0, 0), 0.99);
-    var log = function(total) { console.log('warmed', hash, 'at', Math.round(fraction * 100) + '%', 'on', server.host, total ? '' : '(no answer)'); };
+    var log = function(total) {
+        // The size in the answer tells the read reached the file; no answer means the server never sent the range
+        var where = serviceLog.torrentName(hash, parseInt(query.idx, 10) || 0) + ' at ' + Math.round(fraction * 100) + '% on ' + server.host;
+        console.log('[torrents] ' + (total ? 'Prepared ' + where : 'Could not prepare ' + where + ': the server sent no data in time'));
+    };
     seedPeers(hash, server, function() {
         if (!fraction) return readRange(server, filePath, [0, bytes - 1], log);
         // A position inside the file needs its size first; a one-byte read answers with it
@@ -342,9 +346,11 @@ function verifyMirror(primaryPath, mirrorHash, mirrorIdx) {
         var compare = function() {
             if (--pending > 0) return;
             var same = heads[0].size && heads[0].size === heads[1].size && heads[0].data.equals(heads[1].data);
-            console.log('mirror', mirrorPath, 'for', primaryPath, same ? 'verified' : 'differs');
             var list = mirrors[primaryPath] = mirrors[primaryPath] || [];
-            if (same && list.length < mirrorLimit(mirrorServer)) list.push({ hash: mirrorHash, path: mirrorPath, server: mirrorServer });
+            var used = same && list.length < mirrorLimit(mirrorServer);
+            if (used) list.push({ hash: mirrorHash, path: mirrorPath, server: mirrorServer });
+            var names = serviceLog.torrentName(mirrorHash, mirrorIdx) + ' and the playing ' + serviceLog.torrentName(primaryPath.split('/')[1], primaryPath.split('/')[2]);
+            console.log('[torrents] ' + (!same ? 'Different files in ' + names + ': not merged' : used ? 'Same file in ' + names + ': both now feed the video' : 'Same file in ' + names + ', not used: the video already has its second sources'));
         };
         [primaryServer, mirrorServer].forEach(function(server, i) {
             var filePath = i ? mirrorPath : primaryPath;
@@ -450,7 +456,7 @@ function convertSubtitles(targets, done) {
     if (!targets.length) return done(null);
     fetchFile(targets[0], 5, function(body) {
         var vtt = null;
-        try { vtt = body ? subtitles.toVtt(body) : null; } catch (err) { console.warn('subtitles unreadable', targets[0], err.message); }
+        try { vtt = body ? subtitles.toVtt(body) : null; } catch (err) { console.warn('[subtitles] Could not read the subtitle file ' + targets[0].slice(0, 80) + ': ' + err.message); }
         if (vtt) return done(vtt);
         convertSubtitles(targets.slice(1), done);
     });
@@ -475,7 +481,8 @@ function subtitleVtt(from, done) {
     if (cached) return done(cached.vtt);
     var started = Date.now();
     convertSubtitles(subtitleTargets(from), function(vtt) {
-        console.log('subtitles', vtt ? 'converted ' + (vtt.split('-->').length - 1) + ' cues' : 'unavailable', 'in', Date.now() - started, 'ms from', from.slice(0, 80));
+        var took = ' in ' + (Date.now() - started) + ' ms (' + from.slice(0, 80) + ')';
+        console.log('[subtitles] ' + (vtt ? 'Converted a subtitle file with ' + (vtt.split('-->').length - 1) + ' lines' + took : 'No readable subtitle file found' + took));
         if (vtt) subtitleCache = [{ from: from, vtt: vtt }].concat(subtitleCache).slice(0, 6);
         done(vtt);
     });
@@ -534,7 +541,7 @@ function loadTweaks() {
     try {
         return JSON.parse(fs.readFileSync(path.join(__dirname, 'tweaks.json'), 'utf8'));
     } catch (err) {
-        console.error('tweaks.json unreadable, using local server only', err.message);
+        console.error('[service] Could not read tweaks.json, so only the TV server is used: ' + err.message);
         return { servers: { coreUrl: 'http://127.0.0.1:8080/', candidates: ['http://127.0.0.1:11470/'], probePath: 'stats.json', probeTimeoutMs: 10000, recheckIntervalMs: 0 } };
     }
 }
@@ -587,7 +594,7 @@ function onNetworkChange() {
     // Servers found on the previous network must answer again before they get any request, and discovery runs at once
     var key = networkKey();
     if (key === lastNetwork) return;
-    if (lastNetwork !== null) console.log('network changed:', key || 'no address');
+    if (lastNetwork !== null) console.log('[network] The TV joined another network (' + (key || 'no address') + '), looking for streaming servers again');
     lastNetwork = key;
     lastScan = 0;
     lastSubnetScan = 0;
@@ -628,7 +635,7 @@ function askLan(discover, done) {
         var socket = dgram.createSocket(type === 'udp6' ? { type: 'udp6', ipv6Only: true } : 'udp4');
         sockets.push(socket);
         socket.on('message', onAnswer);
-        socket.on('error', function(err) { console.warn('discovery', type, err.message); });
+        socket.on('error', function(err) { console.warn('[network] Looking for streaming servers over ' + (type === 'udp6' ? 'IPv6' : 'IPv4') + ' failed: ' + err.message); });
         socket.bind(0, function() { send(socket); });
     };
     var query = Buffer.from(discover.query);
@@ -716,7 +723,7 @@ function dropServer(server) {
 
 function adoptServer(found, info) {
     // Use the discovered server right after the TV, and as transcoder since it is the ffmpeg build
-    console.log('discovered LAN streaming server ' + found + (info.name ? ' on ' + info.name : ''));
+    console.log('[network] Found a streaming server at ' + found + (info.name ? ' (' + info.name + ')' : ''));
     // Servers found earlier on another network or address are gone, so they leave the list instead of piling up
     Object.keys(discovered).forEach(function(old) { if (old !== found && !serverStatus[old]) dropServer(old); });
     discovered[found] = true;
@@ -737,7 +744,7 @@ function applyBestUpstream() {
     var next = url.parse(best);
     // Never move the proxy while a video is being served from the current upstream
     if (next.host !== upstream.host && activeStreams === 0) {
-        console.log('streaming upstream ->', best);
+        console.log('[network] New videos now stream from ' + best);
         upstream = next;
     }
 }
@@ -821,7 +828,7 @@ function serveForget(reqUrl, res) {
     }).map(function(key) {
         var entry = touched[key];
         removeTorrent(entry);
-        console.log('removed rejected torrent', hash, 'on', entry.server.host);
+        console.log('[torrents] Removed ' + serviceLog.torrentName(hash) + ' from ' + entry.server.host + ': the source test found it dead');
         return entry.server.host;
     });
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -839,7 +846,7 @@ function removeIdleTorrents() {
         var limit = entry.played || !warmed ? played : warmed;
         if (entry.open > 0 || Date.now() - entry.at < limit) return;
         removeTorrent(entry);
-        console.log('removed idle torrent', entry.hash, 'on', entry.server.host);
+        console.log('[torrents] Removed ' + serviceLog.torrentName(entry.hash) + ' from ' + entry.server.host + ': nothing read it for ' + Math.round(limit / 60000) + ' minutes');
     });
 }
 
@@ -871,7 +878,7 @@ function proxyToStreaming(req, res) {
         if (answerSettings.enabled && req.method === 'GET' && META_PATH.test(req.url)) return shareAnswer(req, res, metaAnswers, 'meta', function(r, s, onResponse) { proxyRequest(r, s, source, source, null, onResponse); });
         return proxyRequest(req, res, source, source);
     }
-    traceRequest(req, res, 'hls');
+    traceRequest(req, res);
     // HLS conversion needs ffmpeg; answer at once when no server can convert so the player moves on
     var transcoder = transcoderFor(req, source);
     if (!transcoder) {
@@ -915,7 +922,7 @@ function proxyHls(req, res, transcoder, source, onResponse) {
         var other = req.method === 'GET' && !moved && !res.headersSent ? alternateTranscoder(transcoder, source) : null;
         if (!other) return false;
         moved = true;
-        console.warn('hls', id, 'failed on', transcoder.host, '(' + reason + '), moving to', other.host);
+        console.warn('[conversion] Conversion ' + String(id).slice(0, 8) + ' failed on ' + transcoder.host + ' (' + reason + '), continuing on ' + other.host);
         if (id && id !== 'probe') hlsSessions[id] = other;
         proxyRequest(req, res, other, source, null, onResponse);
         return true;
@@ -944,8 +951,8 @@ function sendBody(req, proxy) {
     req.pipe(proxy);
 }
 
-function traceRequest(req, res, label) {
-    // Debug log of when a request got its answer and when it finished, to find where a start waits
+function traceRequest(req, res) {
+    // Detail log of when a conversion request got its answer and when it finished, to find where a start waits
     var started = Date.now();
     var headersAt = null;
     var writeHead = res.writeHead;
@@ -953,7 +960,10 @@ function traceRequest(req, res, label) {
         headersAt = Date.now() - started;
         return writeHead.apply(res, arguments);
     };
-    res.on('close', function() { console.log(label, req.url.split('?')[0].slice(0, 70), res.statusCode, 'answer', headersAt, 'ms, end', Date.now() - started, 'ms'); });
+    res.on('close', function() {
+        var answered = headersAt === null ? 'got no answer' : 'answered ' + res.statusCode + ' after ' + headersAt + ' ms';
+        serviceLog.detail('conversion', req.url.split('?')[0].slice(0, 70) + ' ' + answered + ', finished after ' + (Date.now() - started) + ' ms');
+    });
 }
 
 function trackStream(res) {
@@ -1016,10 +1026,10 @@ function syncOnTv(query, source, done) {
             // Only the latest results are kept, enough for the slots of the videos being watched
             Object.keys(syncResults).slice(0, -20).forEach(function(old) { delete syncResults[old]; });
             syncResults[key] = result;
-            console.log('subsync on the TV', JSON.stringify(result));
+            console.log('[subtitles] Measured the subtitle delay on the TV: ' + result.offsetMs + ' ms at ' + Math.round(result.confidence * 100) + '% confidence, speed ratio ' + result.scale + ', ' + result.cues + ' lines over ' + result.audioS + ' s of audio, halves ' + result.disagreementMs + ' ms apart, peak prominence ' + result.prominence);
             done(null, result);
         }, function(err) {
-            console.warn('subsync on the TV failed', err.message);
+            console.warn('[subtitles] Could not measure the subtitle delay on the TV: ' + err.message);
             done(err);
         });
     });
@@ -1041,7 +1051,7 @@ function serveSubsync(req, res) {
     syncOnTv(query, source, function(err, result) {
         if (err) return askLan(500, err.message);
         if (result.confidence >= (subs.syncMinConfidence || 0.5) || !lan) return answerJson(res, 200, result);
-        console.log('subsync on the TV unsure (' + result.confidence + '), asking the LAN sync service');
+        console.log('[subtitles] The TV is unsure of the subtitle delay (' + Math.round(result.confidence * 100) + '% confidence), asking the computer');
         askLan(200);
     });
 }
@@ -1119,7 +1129,7 @@ function cacheRoot() {
 
 function ensureCacheDir(hash) {
     // With the disk cache off the server never creates the torrent folder, then fails to save the torrent metadata there; saved metadata also reopens a title without asking peers again
-    try { fs.mkdirSync(path.join(cacheRoot(), hash), { recursive: true }); } catch (err) { console.error('torrent folder not created', hash, err.message); }
+    try { fs.mkdirSync(path.join(cacheRoot(), hash), { recursive: true }); } catch (err) { console.error('[torrents] Could not create the cache folder of ' + serviceLog.torrentName(hash) + ': ' + err.message); }
 }
 
 function pruneCache(keep) {
@@ -1132,7 +1142,7 @@ function pruneCache(keep) {
         return;
     }
     dirs.sort(function(a, b) { return b.at - a.at; }).slice(keep).forEach(function(dir) {
-        try { fs.rmSync(path.join(root, dir.name), { recursive: true, force: true }); } catch (err) { console.error('old torrent folder not removed', dir.name, err.message); }
+        try { fs.rmSync(path.join(root, dir.name), { recursive: true, force: true }); } catch (err) { console.error('[torrents] Could not remove the old cache folder of ' + serviceLog.torrentName(dir.name) + ': ' + err.message); }
     });
 }
 
@@ -1141,13 +1151,13 @@ function renewDevMode(attempt) {
     var settings = tweaks.devMode || {};
     if (settings.keepAlive === false) return;
     var token = '';
-    try { token = fs.readFileSync(settings.tokenPath, 'utf8').trim(); } catch (err) { return console.warn('dev mode token not readable', err.code); }
-    if (!/^[0-9A-Za-z]+$/.test(token)) return console.warn('dev mode token has an unexpected format');
+    try { token = fs.readFileSync(settings.tokenPath, 'utf8').trim(); } catch (err) { return console.warn('[devmode] Cannot renew the Developer Mode session: its token is not readable (' + err.code + ')'); }
+    if (!/^[0-9A-Za-z]+$/.test(token)) return console.warn('[devmode] Cannot renew the Developer Mode session: its token has an unexpected format');
     attempt = attempt || 1;
     // A dropped connection or a refused answer is tried again a few minutes later instead of waiting for the next long interval
     var retry = once(function(reason) {
         var again = attempt < (settings.retries || 0);
-        console.warn('dev mode renewal failed', reason, again ? '(attempt ' + attempt + ', retrying in ' + Math.round(settings.retryMs / 1000) + ' s)' : '(attempt ' + attempt + ', giving up until the next renewal)');
+        console.warn('[devmode] Developer Mode renewal attempt ' + attempt + ' failed (' + reason + '), ' + (again ? 'trying again in ' + Math.round(settings.retryMs / 1000) + ' s' : 'next try at the next scheduled renewal'));
         if (again) setTimeout(function() { renewDevMode(attempt + 1); }, settings.retryMs);
     });
     var target = url.parse(settings.resetUrl + '?sessionToken=' + encodeURIComponent(token));
@@ -1163,7 +1173,7 @@ function renewThrough(target, addresses, settings, attempt, retry) {
     if (!addresses.length) return retry('no address of ' + target.hostname + ' answered');
     var address = addresses[0];
     var moveOn = once(function(reason) {
-        console.warn('dev mode renewal: ' + address.address + ' did not answer (' + reason + '), trying the next address');
+        console.warn('[devmode] The renewal service at ' + address.address + ' did not answer (' + reason + '), trying its next address');
         renewThrough(target, addresses.slice(1), settings, attempt, retry);
     });
     // Node asks a custom lookup for one address or, when it races address families, for a list
@@ -1178,7 +1188,7 @@ function renewThrough(target, addresses, settings, attempt, retry) {
         res.on('data', function(part) { body += part; });
         // The answer is logged by its outcome only, so the session token never reaches a log
         res.on('end', function() {
-            if (/"result"\s*:\s*"success"/.test(body)) return console.log('dev mode session renewed through ' + address.address + (attempt > 1 ? ' (attempt ' + attempt + ')' : ''));
+            if (/"result"\s*:\s*"success"/.test(body)) return console.log('[devmode] Developer Mode session renewed through ' + address.address + (attempt > 1 ? ' on attempt ' + attempt : ''));
             retry('HTTP ' + res.statusCode);
         });
         res.on('error', function(err) { retry(err.code || err.message); });
@@ -1200,7 +1210,7 @@ function seedServerSettings() {
     try { settings = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) {}
     if (settings.transcodeHardwareAccel === false) return;
     settings.transcodeHardwareAccel = false;
-    try { fs.writeFileSync(file, JSON.stringify(settings, null, 4)); } catch (err) { console.error('server settings not writable', err.message); }
+    try { fs.writeFileSync(file, JSON.stringify(settings, null, 4)); } catch (err) { console.error('[service] Could not write the streaming server settings: ' + err.message); }
 }
 
 // Start the bundled server only when no streaming server already owns :11470, saving RAM

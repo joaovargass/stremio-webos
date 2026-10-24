@@ -1,9 +1,9 @@
 // Service log kept in memory for the on-screen debug log and the log viewer.
 //
 // Every console line of this process (the proxy and the bundled streaming server) is sanitized and kept in one ring
-// per level, so a stream of request traces never pushes a warning out. Request lines of the streaming server become
-// short sentences that keep the raw request beside them, and the polls the pages repeat every few seconds are kept
-// once a minute with a count of the repeats instead of filling the ring.
+// per level, so a stream of request traces never pushes a warning out. The proxy's own lines start with an [area] tag;
+// request lines of the streaming server become short sentences that keep the raw request beside them, and the polls
+// the pages repeat every few seconds are kept once a minute with a count of the repeats instead of filling the ring.
 var util = require('util');
 
 var RANK = { error: 0, warn: 0, log: 1, info: 1, verbose: 2 };
@@ -13,11 +13,13 @@ var REQUEST = /^-> (\w+) ?(\S*)\s*(.*)$/;
 var CACHE_CLEANUP = /^Resizing cache size to \S+ from \S+ by deleting (\d+) files/;
 var ENGINE_DETAIL = /^(hls-converter - |hls executables|Using app path|EngineFS|Resizing cache)/;
 var PERIODIC = /^(Stremio checked that the streaming server answers|Read the state of|Read the file map of)/;
+var AREA_TAG = /^\[([a-z]+)\] /;
 var REPEAT_WINDOW_MS = 60000;
 var rings = [[], [], []];
 var limits = [200, 300, 400];
 var seq = 0;
 var repeats = {};
+var forcedLevel = null;
 
 function safeText(text) {
     // Credentials and personal data never reach the log; media paths stay, since they are what a diagnosis needs
@@ -40,9 +42,14 @@ function rangeText(range) {
     return ', ' + (match[2] ? megabytes(+match[1]) + ' to ' + megabytes(+match[2] + 1) : 'from ' + megabytes(+match[1]));
 }
 
+function torrentName(hash, fileIdx) {
+    // A torrent, or one of its files, named by the first characters of its hash
+    return 'torrent ' + String(hash).slice(0, 8).toLowerCase() + (fileIdx !== undefined && fileIdx !== null ? ' file ' + fileIdx : '');
+}
+
 function torrentRequest(method, torrent, range) {
-    // A request about one torrent or one of its files, named by the first characters of its hash
-    var name = 'torrent ' + torrent[1].slice(0, 8).toLowerCase() + (torrent[2] !== undefined ? ' file ' + torrent[2] : '');
+    // A request about one torrent or one of its files
+    var name = torrentName(torrent[1], torrent[2]);
     var rest = torrent[3] || '';
     if (rest === '/stats.json') return 'Read the state of ' + name;
     if (rest === '/pieces.json') return 'Read the file map of ' + name;
@@ -86,13 +93,14 @@ function describeRequest(method, path, range) {
 }
 
 function classify(level, text) {
-    // Level, area and sentence of one console line; traces of the streaming server are detail-level evidence
+    // Level, area and sentence of one console line: the proxy tags its own lines with an area, the rest is the streaming server
+    var tag = AREA_TAG.exec(text);
+    if (tag) return { level: level, area: tag[1], text: text.slice(tag[0].length) };
     var request = REQUEST.exec(text);
     if (request) return { level: 'verbose', area: 'server', text: describeRequest(request[1], request[2], request[3]), raw: text };
     var cleanup = CACHE_CLEANUP.exec(text);
     if (cleanup) return { level: 'verbose', area: 'server', text: 'Cleaned the torrent cache folder (' + cleanup[1] + ' files removed)', raw: text };
-    if (ENGINE_DETAIL.test(text)) return { level: 'verbose', area: 'server', text: text };
-    return { level: level, text: text };
+    return { level: ENGINE_DETAIL.test(text) ? 'verbose' : level, area: 'server', text: text };
 }
 
 function push(entry) {
@@ -136,11 +144,18 @@ function capture() {
         var original = console[level].bind(console);
         console[level] = function() {
             // Formatted like the console itself, so objects and errors read as their content
-            record(level, util.format.apply(util, arguments));
+            record(forcedLevel || level, util.format.apply(util, arguments));
             original.apply(null, arguments);
         };
     });
     setInterval(flushRepeats, REPEAT_WINDOW_MS).unref();
+}
+
+function detail(area, text) {
+    // A line worth keeping only for a close look, such as the timing of every conversion request
+    forcedLevel = 'verbose';
+    console.info('[' + area + '] ' + text);
+    forcedLevel = null;
 }
 
 function setLimits(ring) {
@@ -158,4 +173,4 @@ function read(since, detail) {
     return { last: seq, lines: lines.sort(function(a, b) { return a.n - b.n; }) };
 }
 
-module.exports = { capture: capture, setLimits: setLimits, read: read };
+module.exports = { capture: capture, setLimits: setLimits, read: read, detail: detail, torrentName: torrentName };

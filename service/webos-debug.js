@@ -12,7 +12,6 @@
     var LEVEL_TONE = { error: 'twk-bad', warn: 'twk-warn', action: 'twk-good', info: '', verbose: 'twk-faint' };
     var KEY_NAMES = { 13: 'OK', 37: 'Left', 38: 'Up', 39: 'Right', 40: 'Down', 461: 'Back', 27: 'Esc', 403: 'Red', 404: 'Green', 405: 'Yellow', 406: 'Blue', 415: 'Play', 19: 'Pause', 413: 'Stop', 417: 'Forward', 412: 'Rewind' };
     var SCREENS = [[/^#\/player/, 'Player'], [/^#\/detail\/series\/[^/]+\/[^/]+/, 'Episode'], [/^#\/detail/, 'Title page'], [/^#\/discover/, 'Discover'], [/^#\/library/, 'Library'], [/^#\/search/, 'Search'], [/^#\/settings/, 'Stremio settings'], [/^#\/addons/, 'Addons'], [/^#\/login/, 'Login'], [/^#\/?(home)?$/, 'Home']];
-    var SERVICE_AREAS = [[/^hls /, 'conversion'], [/^subsync|^subtitles/, 'subtitles'], [/^dev mode/, 'devmode'], [/discover|LAN|network/i, 'network'], [/torrent|warm|mirror|route/i, 'torrents']];
     var ring = config.ring || {};
     var RING_LIMITS = [ring.important || 200, ring.normal || 300, ring.verbose || 400];
     var detailName = DETAIL[config.detail] !== undefined ? config.detail : 'detailed';
@@ -141,17 +140,8 @@
     }
 
     function serviceLine(line) {
-        // The service names the area of streaming server lines; the others get one from their wording
-        var area = line.area || 'service';
-        var level = line.level === 'log' ? 'info' : line.level || 'info';
-        for (var i = 0; !line.area && i < SERVICE_AREAS.length; i++) {
-            if (!SERVICE_AREAS[i][0].test(line.text)) continue;
-            area = SERVICE_AREAS[i][1];
-            break;
-        }
-        // The answer timing of every conversion request is useful only when looking for a slow start
-        if (area === 'conversion' && level === 'info' && /answer .* ms, end/.test(line.text)) level = 'verbose';
-        add(area, level, line.text, line.at, line.raw);
+        // The service names the area and the level of every line it keeps
+        add(line.area, line.level === 'log' ? 'info' : line.level, line.text, line.at, line.raw);
     }
 
     function pollService() {
