@@ -18,8 +18,8 @@
     }
 
     function peersFound(stats) {
-        // Peer addresses the trackers and the DHT returned so far, reachable or not
-        return (stats.sources || []).reduce(function (sum, source) { return sum + (source.numFound || 0); }, 0);
+        // Distinct peer addresses each tracker and the DHT returned so far, reachable or not; repeated announces count once
+        return (stats.sources || []).reduce(function (sum, source) { return sum + (source.numFoundUniq || 0); }, 0);
     }
 
     function fileBytes(stats) {
