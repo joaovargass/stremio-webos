@@ -69,6 +69,11 @@
         });
     }
 
+    function streamKey(stream) {
+        // Sources compare by torrent file or address: every new ranking builds new objects for the same sources
+        return stream.infoHash ? stream.infoHash.toLowerCase() + '/' + (stream.fileIdx || 0) : stream.url;
+    }
+
     function describe(stream) {
         // Two short lines per source: addon and quality, then the release details
         var name = String(stream.name || t('doctor.nextSource')).replace(/\n/g, ' · ');
@@ -135,8 +140,8 @@
                 if (!open) return;
                 playing = results[1];
                 fill(null);
-                // The background test keeps measuring: the list follows it while open, keeping the focused source
-                liveTimer = setInterval(function () { fill(items[focus]); }, 2000);
+                // The background test keeps measuring: its numbers update in place while the order and the focus stay put
+                liveTimer = setInterval(refreshDetails, 2000);
             });
         });
     }
@@ -146,7 +151,7 @@
         var streams = (window.__stremioRankedStreams || []).slice(0, config.maxItems || 10);
         items = streams.length ? [REFRESH].concat(streams) : [];
         var current = items.filter(function (s) { return s !== REFRESH && window.__stremioDoctor && window.__stremioDoctor.sameStream(s, playing); })[0] || null;
-        var keepIndex = keep ? items.indexOf(keep) : -1;
+        var keepIndex = keep === REFRESH ? 0 : keep ? items.map(function (s) { return s === REFRESH ? null : streamKey(s); }).indexOf(streamKey(keep)) : -1;
         render(current);
         if (keepIndex !== -1) {
             focus = keepIndex;
@@ -155,6 +160,18 @@
             focus = 1;
             moveFocus(0);
         }
+    }
+
+    function refreshDetails() {
+        // Rewrite only the measured line of a row whose text changed, so the rows and the focus stay as they are
+        var latest = {};
+        (window.__stremioRankedStreams || []).forEach(function (s) { latest[streamKey(s)] = s; });
+        items.forEach(function (stream, i) {
+            var row = list.children[i];
+            if (stream === REFRESH || !row) return;
+            var details = describe(latest[streamKey(stream)] || stream).details;
+            if (row.lastChild.textContent !== details) row.lastChild.textContent = details;
+        });
     }
 
     function hide() {
@@ -171,6 +188,8 @@
         if (stream === REFRESH) {
             if (window.__stremioTweaks && window.__stremioTweaks.retest) window.__stremioTweaks.retest();
             notice(t('sources.retrying'));
+            // Refresh is the one moment the order may change; the focus stays on the refresh row
+            fill(REFRESH);
             return;
         }
         hide();
