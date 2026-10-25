@@ -136,7 +136,7 @@ Exposes the player video controller as `window.__stremioPlayerVideo` and its ext
 
 ### webos-restart-option.patch
 
-Adds "Recomeçar do início" to the card menu (home, discover, library, search) under "Continue watching": it clears the saved progress (`rewindLibraryItem`) and opens the player from the start.
+Adds "Start over from the beginning" (text from the translation dictionary, `restart.option`) to the card menu (home, discover, library, search) under "Continue watching": it clears the saved progress (`rewindLibraryItem`) and opens the player from the start.
 
 ### webos-subtitle-class.patch
 

@@ -15,7 +15,7 @@
                                                                          return Ze.option
                                                                      },
 +                                                                    icon: "skip-back",
-+                                                                    label: "Recomeçar do início",
++                                                                    get label() { return window.__twkI18n.t("restart.option") },
 +                                                                    onPress: R
 +                                                                })
 +                                                            }
