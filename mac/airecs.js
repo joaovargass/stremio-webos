@@ -18,6 +18,7 @@ const TIMEOUT_MS = parseInt(process.env.AI_TIMEOUT_MS || '240000', 10);
 const MAX_BODY = 400000;
 const MIN_ROW = 6;
 const MAX_ROW = 15;
+const ANSWERS_MAX = 20;
 const SCHEMA = {
     type: 'object',
     properties: {
@@ -107,6 +108,9 @@ function recommend(body) {
             const rows = checked(reply, body.candidates);
             log(`${body.period} rows from ${body.model || MODEL} in ${Date.now() - started} ms:`, rows.map((r) => `${r.title} (${r.ids.length})`).join(' | ') || 'none usable');
             answers[key] = { rows: rows, model: body.model || MODEL, at: Date.now() };
+            // Only the latest answers are worth keeping: each day and week brings a new history and shortlist
+            const keys = Object.keys(answers);
+            if (keys.length > ANSWERS_MAX) delete answers[keys[0]];
             return answers[key];
         });
     });

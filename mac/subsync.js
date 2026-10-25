@@ -26,6 +26,7 @@ const LEAD_S = parseInt(process.env.SUBSYNC_LEAD_S || '60', 10);
 const MAX_OFFSET_S = parseInt(process.env.SUBSYNC_MAX_OFFSET_S || '60', 10);
 const FETCH_TIMEOUT_MS = parseInt(process.env.SUBSYNC_FETCH_TIMEOUT_MS || '30000', 10);
 const AGREE_S = 0.3;
+const CACHE_MAX = 500;
 const TIME = /(?:(\d+):)?(\d{1,2}):(\d{2})[,.](\d{1,3})/;
 const cache = new Map();
 let queue = Promise.resolve();
@@ -210,6 +211,8 @@ http.createServer((req, res) => {
     // Jobs run one at a time to keep ffmpeg and the aligner from competing for the CPU
     queue = queue.then(() => sync(media, sub, at)).then((result) => {
         cache.set(key, result);
+        // The oldest results leave first, so a service running for months keeps a bounded memory
+        if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value);
         log('synced', JSON.stringify(result), sub);
         answer(res, 200, result);
     }, (err) => {
