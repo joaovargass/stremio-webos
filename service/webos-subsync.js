@@ -34,14 +34,16 @@
         return (ms > 0 ? '+' : '') + window.__twkI18n.number(ms / 1000, 1) + ' s';
     }
 
-    function apply(result, track) {
-        // Set the delay only when the subtitle really matches the speech and the shift is large enough to matter
+    function apply(result, track, manual) {
+        // Set the delay only when the subtitle really matches the speech and the shift is large enough to matter; a requested sync always says how it went
         if (!(result.confidence >= (config.syncMinConfidence || 0.5))) {
             console.warn('[subsync] low confidence result ignored', JSON.stringify(result));
+            if (manual) shared.notify(t('subsync.unsure'), 4000);
             return;
         }
         if (Math.abs(result.offsetMs) < (config.syncMinOffsetMs || 300)) {
             console.info('[subsync] already in sync', result.offsetMs, 'ms');
+            if (manual) shared.notify(t('subsync.inSync'), 3000);
             return;
         }
         lastApplied = result.offsetMs;
@@ -51,22 +53,25 @@
         shared.notify(t(result.on === 'tv' ? 'subsync.appliedTv' : 'subsync.appliedComputer', { offset: formatSeconds(result.offsetMs) }), 4000);
     }
 
-    function check() {
-        // Run at most one measurement at a time, only on the player with an external subtitle
-        if (busy || !config.enabled || config.autoSync === false || !shared.onPlayer() || !window.__stremioSetSubtitlesDelay) return;
+    function check(manual) {
+        // Run at most one measurement at a time, only on the player with an external subtitle; a requested sync skips the automatic limits
+        if (manual && busy) return shared.notify(t('subsync.busy'), 3000);
+        if (busy || !config.enabled || (!manual && config.autoSync === false) || !shared.onPlayer() || !window.__stremioSetSubtitlesDelay) return;
         var video = document.querySelector('video');
         var state = playerState();
         var track = selectedTrack(state);
         var playing = video && !video.paused && video.readyState >= 3;
         playingSince = playing ? playingSince || Date.now() : null;
-        if (!track || !track.url || !playing || Date.now() - playingSince < (config.syncAfterPlayingS || 20) * 1000) return;
+        if (manual && !track) return shared.notify(t('subsync.needsExternal'), 4000);
+        if (!track || !track.url || (!manual && (!playing || Date.now() - playingSince < (config.syncAfterPlayingS || 20) * 1000))) return;
         // A delay the viewer chose by hand wins over any automatic correction
         var delay = state.extraSubtitlesDelay || 0;
-        if (delay !== 0 && delay !== lastApplied) return;
+        if (!manual && delay !== 0 && delay !== lastApplied) return;
         // Subtitles matched to this exact release by hash are already in sync
-        if (window.__stremioSubs && window.__stremioSubs.scoreOf(track) >= 100) return;
+        if (!manual && window.__stremioSubs && window.__stremioSubs.scoreOf(track) >= 100) return;
         var key = track.id + '|' + Math.floor(video.currentTime / (config.syncEverySlotS || 600));
-        if (done[key]) return;
+        if (done[key] && !manual) return;
+        if (manual) shared.notify(t('subsync.measuring'), 4000);
         done[key] = true;
         busy = true;
         // The sync reads the audio from the original torrent file, even while the TV plays an HLS conversion of it
@@ -84,8 +89,8 @@
         }).then(function (r) {
             busy = false;
             if (r.status === 503) {
-                // Without any way to measure the subtitle stays as chosen; tell the viewer once
-                if (!warnedUnavailable) shared.notify(t('subsync.unavailable'), 5000);
+                // Without any way to measure the subtitle stays as chosen; tell the viewer once, and on every requested sync
+                if (!warnedUnavailable || manual) shared.notify(t('subsync.unavailable'), 5000);
                 warnedUnavailable = true;
                 return;
             }
@@ -95,12 +100,14 @@
                     retried[key] = true;
                     setTimeout(function () { delete done[key]; }, 60000);
                 }
+                if (manual) shared.notify(t('subsync.failed'), 4000);
                 return console.warn('[subsync] failed', r.status, JSON.stringify(r.body));
             }
-            apply(r.body, track);
+            apply(r.body, track, manual);
         }).catch(function (err) {
             clearTimeout(timer);
             busy = false;
+            if (manual) shared.notify(t('subsync.failed'), 4000);
             console.warn('[subsync] request failed', err);
         });
     }
@@ -116,5 +123,6 @@
     window.addEventListener('hashchange', onRouteChange);
     window.addEventListener('historyChange', onRouteChange);
     // The check always runs and reads the switches each time, so the settings apply without a reload
-    setInterval(check, 5000);
+    setInterval(function () { check(false); }, 5000);
+    window.__stremioSyncNow = function () { check(true); };
 })();

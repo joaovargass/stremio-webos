@@ -20,6 +20,8 @@
     var loadingTimer = null;
     var liveTimer = null;
     var REFRESH = { refresh: true };
+    var CONVERT = { action: 'convert' };
+    var SYNC = { action: 'sync' };
 
     function onTitle() {
         // A title page lists its sources too: a movie, or an episode chosen in a series
@@ -69,6 +71,18 @@
         });
     }
 
+    function isSource(item) {
+        // A row that plays a source, as opposed to the refresh and action rows
+        return item !== REFRESH && !item.action;
+    }
+
+    function convertNow() {
+        // Convert the playing video on the server, when conversion is on and the video is not converted already
+        var video = document.querySelector('video');
+        if (video && window.__stremioConvert && window.__stremioConvert(video, t('sources.converting'))) return;
+        notice(t('sources.convertUnavailable'));
+    }
+
     function streamKey(stream) {
         // Sources compare by torrent file or address: every new ranking builds new objects for the same sources
         return stream.infoHash ? stream.infoHash.toLowerCase() + '/' + (stream.fileIdx || 0) : stream.url;
@@ -104,9 +118,10 @@
             // The pointer focuses a row by hovering and plays it with a click
             row.addEventListener('mouseenter', function () { focus = i; moveFocus(0); });
             row.addEventListener('click', function (e) { e.stopPropagation(); focus = i; choose(); });
-            if (stream === REFRESH) {
-                row.appendChild(element('div', 'twk-item-title', t('sources.refresh')));
-                row.appendChild(element('div', 'twk-item-details', t('sources.refreshDetails')));
+            if (!isSource(stream)) {
+                var name = stream === REFRESH ? 'refresh' : stream.action;
+                row.appendChild(element('div', 'twk-item-title', t('sources.' + name)));
+                row.appendChild(element('div', 'twk-item-details', t('sources.' + name + 'Details')));
                 return;
             }
             var info = describe(stream);
@@ -149,15 +164,17 @@
     function fill(keep) {
         // Rows in the current ranked order, the refresh row first; focus stays on the same source when the order changes
         var streams = (window.__stremioRankedStreams || []).slice(0, config.maxItems || 10);
-        items = streams.length ? [REFRESH].concat(streams) : [];
-        var current = items.filter(function (s) { return s !== REFRESH && window.__stremioDoctor && window.__stremioDoctor.sameStream(s, playing); })[0] || null;
-        var keepIndex = keep === REFRESH ? 0 : keep ? items.map(function (s) { return s === REFRESH ? null : streamKey(s); }).indexOf(streamKey(keep)) : -1;
+        // On the player two actions come first: convert the playing video, sync its subtitle now
+        items = streams.length ? [REFRESH].concat(onPlayer() ? [CONVERT, SYNC] : [], streams) : [];
+        var current = items.filter(function (s) { return isSource(s) && window.__stremioDoctor && window.__stremioDoctor.sameStream(s, playing); })[0] || null;
+        var keepIndex = keep === REFRESH ? 0 : keep ? items.map(function (s) { return isSource(s) ? streamKey(s) : null; }).indexOf(streamKey(keep)) : -1;
         render(current);
         if (keepIndex !== -1) {
             focus = keepIndex;
             moveFocus(0);
         } else if (!current && items.length > 1) {
-            focus = 1;
+            // Without a playing source the focus starts on the best source, after the refresh and action rows
+            focus = items.filter(function (s) { return !isSource(s); }).length;
             moveFocus(0);
         }
     }
@@ -168,7 +185,7 @@
         (window.__stremioRankedStreams || []).forEach(function (s) { latest[streamKey(s)] = s; });
         items.forEach(function (stream, i) {
             var row = list.children[i];
-            if (stream === REFRESH || !row) return;
+            if (!isSource(stream) || !row) return;
             var details = describe(latest[streamKey(stream)] || stream).details;
             if (row.lastChild.textContent !== details) row.lastChild.textContent = details;
         });
@@ -193,6 +210,8 @@
             return;
         }
         hide();
+        if (stream === CONVERT) return convertNow();
+        if (stream === SYNC) return window.__stremioSyncNow && window.__stremioSyncNow();
         if (!stream) return;
         if (onPlayer() && window.__stremioDoctor) return window.__stremioDoctor.playStream(stream, t('doctor.switch'));
         if (stream.deepLinks && stream.deepLinks.player && window.__stremioHistory) window.__stremioHistory.navigate(stream.deepLinks.player.replace(/^#/, ''));
