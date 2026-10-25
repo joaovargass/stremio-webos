@@ -1,10 +1,77 @@
 <!doctype html>
 <html>
-<head><meta charset="UTF-8"><title>Stremio</title></head>
-<body style="background:#0c0b11;margin:0;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif">
-<div id="status" style="color:rgba(255,255,255,0.6);font-size:24px">Loading Stremio...</div>
+<head>
+<meta charset="UTF-8">
+<title>Stremio</title>
+<style>
+    /* The same tokens as the app's own panels (service/webos-ui.css), which this start page cannot load yet */
+    :root {
+        --twk-font: 'PlusJakartaSans', -apple-system, BlinkMacSystemFont, sans-serif;
+        --twk-text: #ffffff;
+        --twk-muted: rgba(255, 255, 255, 0.6);
+        --twk-accent: #7b5bf5;
+        --twk-surface-solid: #0c0c10;
+        --twk-text-m: 1.75vh;
+        --twk-text-l: 2vh;
+        --twk-text-xl: 2.4vh;
+        --twk-weight-bold: 700;
+        --twk-space-m: 1vh;
+        --twk-space-xl: 2.2vh;
+        --twk-inset-l: 2vw;
+        --twk-control: 4.4vh;
+        --twk-focus-ring: 0.25vh;
+        --twk-radius-s: 1vh;
+    }
+    body {
+        margin: 0;
+        height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--twk-surface-solid);
+        color: var(--twk-text);
+        font-family: var(--twk-font);
+        text-align: center;
+    }
+    .status { color: var(--twk-muted); font-size: var(--twk-text-xl); }
+    .failed { max-width: 40vw; padding: 0 var(--twk-inset-l); }
+    .failed-title { font-size: var(--twk-text-xl); font-weight: var(--twk-weight-bold); margin-bottom: var(--twk-space-m); }
+    .failed-text { color: var(--twk-muted); font-size: var(--twk-text-m); margin-bottom: var(--twk-space-xl); }
+    .retry {
+        height: var(--twk-control);
+        padding: 0 var(--twk-inset-l);
+        font: inherit;
+        font-size: var(--twk-text-l);
+        color: var(--twk-text);
+        background: var(--twk-accent);
+        border: 0;
+        border-radius: var(--twk-radius-s);
+        outline: var(--twk-focus-ring) solid transparent;
+    }
+    .retry:focus { outline-color: var(--twk-text); }
+</style>
+</head>
+<body>
+<div id="status" class="status"></div>
 <script>
+// Texts follow the TV language: the Stremio profile, which the app's other texts follow, is not loaded yet
+var TEXTS = {
+    en: {
+        loading: 'Starting Stremio…',
+        failed: 'Stremio could not start its service',
+        advice: 'Press OK to try again. If it keeps happening, close the app and open it again.',
+        retry: 'Try again'
+    },
+    pt: {
+        loading: 'Iniciando o Stremio…',
+        failed: 'O Stremio não conseguiu iniciar o serviço',
+        advice: 'Pressione OK para tentar de novo. Se continuar, feche o app e abra de novo.',
+        retry: 'Tentar de novo'
+    }
+};
+var texts = TEXTS[(navigator.language || 'en').slice(0, 2).toLowerCase()] || TEXTS.en;
 var done = false;
+document.getElementById('status').textContent = texts.loading;
 var bridge = new PalmServiceBridge();
 bridge.onservicecallback = function(response) {
     done = true;
@@ -14,12 +81,21 @@ bridge.onservicecallback = function(response) {
 bridge.call('luna://com.joaovargass.stremiodbg.server/start', '{}');
 setTimeout(function() {
     if (done) return;
-    document.body.innerHTML =
-        '<div style="color:#fff;text-align:center;max-width:600px;padding:0 24px">' +
-        '<div style="font-size:28px;margin-bottom:12px">Stremio service didn\'t start</div>' +
-        '<div style="color:rgba(255,255,255,0.6);font-size:18px;margin-bottom:32px">Try again, or check Homebrew Channel logs if this keeps happening.</div>' +
-        '<button onclick="location.reload()" style="padding:14px 32px;font-size:20px;background:#7b5bf5;color:#fff;border:0;border-radius:6px;cursor:pointer">Retry</button>' +
-        '</div>';
+    // The service did not answer in 30 s: say so and offer a retry the remote can reach at once
+    var box = document.createElement('div');
+    box.className = 'failed';
+    [['failed-title', texts.failed], ['failed-text', texts.advice]].forEach(function(part) {
+        var line = box.appendChild(document.createElement('div'));
+        line.className = part[0];
+        line.textContent = part[1];
+    });
+    var button = box.appendChild(document.createElement('button'));
+    button.className = 'retry';
+    button.textContent = texts.retry;
+    button.onclick = function() { location.reload(); };
+    document.body.innerHTML = '';
+    document.body.appendChild(box);
+    button.focus();
 }, 30000);
 </script>
 </body>
