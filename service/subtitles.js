@@ -15,14 +15,34 @@ var MARKS = { acute: '́', grave: '̀', circ: '̂', uml: '̈', tilde: '̃', cedi
 var CP1252 = '€\u0081‚ƒ„…†‡ˆ‰Š‹Œ\u008dŽ\u008f\u0090‘’“”•–—˜™š›œ\u009džŸ';
 var ALLOWED_TAG = /<\/?(i|b|u)>/gi;
 
-function decodeBytes(buffer) {
-    // Text from UTF-8 or UTF-16 with a byte order mark, UTF-8 when valid, else Windows-1252
-    if (buffer[0] === 0xff && buffer[1] === 0xfe) return buffer.slice(2).toString('utf16le');
-    if (buffer[0] === 0xfe && buffer[1] === 0xff) {
-        var swapped = Buffer.from(buffer.slice(2));
-        swapped.swap16();
-        return swapped.toString('utf16le');
+function utf16Order(buffer) {
+    // A UTF-16 file without a byte order mark: subtitle text is mostly digits and Latin letters, so one byte of each pair is zero
+    var pairs = Math.min(256, buffer.length >> 1);
+    var even = 0;
+    var odd = 0;
+    for (var i = 0; i < pairs; i++) {
+        if (buffer[2 * i] === 0) even++;
+        if (buffer[2 * i + 1] === 0) odd++;
     }
+    if (pairs < 8) return null;
+    if (odd > pairs * 0.4 && even < pairs * 0.05) return 'le';
+    return even > pairs * 0.4 && odd < pairs * 0.05 ? 'be' : null;
+}
+
+function fromUtf16(bytes, order) {
+    // UTF-16 text in either byte order
+    if (order === 'le') return bytes.toString('utf16le');
+    var swapped = Buffer.from(bytes.slice(0, bytes.length & ~1));
+    swapped.swap16();
+    return swapped.toString('utf16le');
+}
+
+function decodeBytes(buffer) {
+    // Text from UTF-16 (with or without a byte order mark), UTF-8 when valid, else Windows-1252
+    if (buffer[0] === 0xff && buffer[1] === 0xfe) return fromUtf16(buffer.slice(2), 'le');
+    if (buffer[0] === 0xfe && buffer[1] === 0xff) return fromUtf16(buffer.slice(2), 'be');
+    var order = utf16Order(buffer);
+    if (order) return fromUtf16(buffer, order);
     var text = buffer.toString('utf8');
     if (text.indexOf('�') === -1) return text.replace(/^﻿/, '');
     // Invalid UTF-8: a legacy single-byte file, as most Portuguese and Spanish subtitles are
