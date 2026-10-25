@@ -4,19 +4,22 @@
 # official server.js patched to listen on STREMIO_PORT, Homebrew ffmpeg for HLS,
 # disk cache, the "Fast" torrent profile, kept alive by launchd and caffeinate.
 # Also installs the subtitle sync service (ffsubsync in its own Python venv, on
-# SUBSYNC_PORT), the LAN discovery responder that lets the TV find this computer on any
+# SUBSYNC_PORT), the AI recommendation service (a local Ollama model, on AI_PORT; optional, the TV keeps its
+# own rows without it), the LAN discovery responder that lets the TV find this computer on any
 # network (UDP DISCOVERY_PORT) and the daily Dev Mode keepalive. Safe to run again: an agent is
 # restarted only when its files changed or it is not loaded, so a video being
 # served is not interrupted.
 #
 # Requires: Homebrew node@22 and ffmpeg, curl, python3.
-# Usage: ./mac/install.sh   (env: SERVER_VERSION, STREMIO_PORT, SUBSYNC_PORT, DISCOVERY_PORT, CACHE_BYTES)
+# Usage: ./mac/install.sh   (env: SERVER_VERSION, STREMIO_PORT, SUBSYNC_PORT, AI_PORT, OLLAMA_MODEL, DISCOVERY_PORT, CACHE_BYTES)
 #
 set -euo pipefail
 
 SERVER_VERSION="${SERVER_VERSION:-4.20.17}"
 STREMIO_PORT="${STREMIO_PORT:-11480}"
 SUBSYNC_PORT="${SUBSYNC_PORT:-11481}"
+AI_PORT="${AI_PORT:-11482}"
+OLLAMA_MODEL="${OLLAMA_MODEL:-gemma4:12b}"
 DISCOVERY_PORT="${DISCOVERY_PORT:-11479}"
 CACHE_BYTES="${CACHE_BYTES:-10737418240}"
 NODE_BIN="${NODE_BIN:-/opt/homebrew/opt/node@22/bin/node}"
@@ -28,6 +31,7 @@ SERVER_LABEL="com.joaovargass.stremio-lan-server"
 KEEPALIVE_LABEL="com.joaovargass.webos-devmode-keepalive"
 SUBSYNC_LABEL="com.joaovargass.stremio-subsync"
 DISCOVERY_LABEL="com.joaovargass.stremio-discovery"
+AI_LABEL="com.joaovargass.stremio-ai"
 VENV="$HOME/.local/share/stremio-subsync/venv"
 
 for bin in "$NODE_BIN" "$FFMPEG_DIR/ffmpeg" "$FFMPEG_DIR/ffprobe"; do
@@ -54,6 +58,7 @@ python3 "$HERE/patch-server.py" "$STAGE/server.js"
 SERVER_CHANGED=$(install_file "$STAGE/server.js" "$DEST/server.js")
 SUBSYNC_CHANGED=$(install_file "$HERE/subsync.js" "$DEST/subsync.js")
 DISCOVERY_CHANGED=$(install_file "$HERE/discovery.js" "$DEST/discovery.js")
+AI_CHANGED=$(install_file "$HERE/airecs.js" "$DEST/airecs.js")
 install_file "$HERE/devmode-keepalive.sh" "$DEST/devmode-keepalive.sh" >/dev/null
 
 echo "==> Installing ffsubsync into $VENV"
@@ -129,12 +134,35 @@ cat > "$STAGE/$DISCOVERY_LABEL.plist" <<EOF
         <key>DISCOVERY_PORT</key><string>$DISCOVERY_PORT</string>
         <key>STREMIO_PORT</key><string>$STREMIO_PORT</string>
         <key>SUBSYNC_PORT</key><string>$SUBSYNC_PORT</string>
+        <key>AI_PORT</key><string>$AI_PORT</string>
     </dict>
     <key>RunAtLoad</key><true/>
     <key>KeepAlive</key><true/>
     <key>ProcessType</key><string>Background</string>
     <key>StandardOutPath</key><string>$DEST/discovery.log</string>
     <key>StandardErrorPath</key><string>$DEST/discovery.log</string>
+</dict>
+</plist>
+EOF
+cat > "$STAGE/$AI_LABEL.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>$AI_LABEL</string>
+    <key>ProgramArguments</key>
+    <array><string>$NODE_BIN</string><string>$DEST/airecs.js</string></array>
+    <key>WorkingDirectory</key><string>$DEST</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>AI_PORT</key><string>$AI_PORT</string>
+        <key>OLLAMA_MODEL</key><string>$OLLAMA_MODEL</string>
+    </dict>
+    <key>RunAtLoad</key><true/>
+    <key>KeepAlive</key><true/>
+    <key>ProcessType</key><string>Background</string>
+    <key>StandardOutPath</key><string>$DEST/airecs.log</string>
+    <key>StandardErrorPath</key><string>$DEST/airecs.log</string>
 </dict>
 </plist>
 EOF
@@ -155,11 +183,12 @@ EOF
 
 echo "==> (Re)loading agents whose files changed"
 SERVER_RESTARTED=0
-for label in "$SERVER_LABEL" "$SUBSYNC_LABEL" "$DISCOVERY_LABEL" "$KEEPALIVE_LABEL"; do
+for label in "$SERVER_LABEL" "$SUBSYNC_LABEL" "$AI_LABEL" "$DISCOVERY_LABEL" "$KEEPALIVE_LABEL"; do
     changed=$(install_file "$STAGE/$label.plist" "$AGENTS/$label.plist")
     [ "$label" = "$SERVER_LABEL" ] && [ "$SERVER_CHANGED" = 1 ] && changed=1
     [ "$label" = "$SUBSYNC_LABEL" ] && [ "$SUBSYNC_CHANGED" = 1 ] && changed=1
     [ "$label" = "$DISCOVERY_LABEL" ] && [ "$DISCOVERY_CHANGED" = 1 ] && changed=1
+    [ "$label" = "$AI_LABEL" ] && [ "$AI_CHANGED" = 1 ] && changed=1
     if [ "$changed" = 0 ] && launchctl print "gui/$(id -u)/$label" >/dev/null 2>&1; then
         echo "    $label unchanged, kept running"
         continue

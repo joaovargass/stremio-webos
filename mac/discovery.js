@@ -3,10 +3,10 @@
 // The TV asks "is a streaming server here?" with a small UDP datagram, sent as an IPv4 broadcast and
 // to an IPv6 link-local multicast group, so it finds this computer on any network: a home router,
 // a phone hotspot without IPv4, after the router hands out new addresses. This service answers with
-// the ports of the streaming server and of the subtitle sync service, and with the addresses of this
-// computer the TV can reach. The answer carries no secret. Only Node built-ins are used.
+// the ports of the streaming server, of the subtitle sync service and of the AI recommendation service, and with
+// the addresses of this computer the TV can reach. The answer carries no secret. Only Node built-ins are used.
 //
-// Env: DISCOVERY_PORT (11479), DISCOVERY_GROUP6 (ff02::114), STREMIO_PORT (11480), SUBSYNC_PORT (11481)
+// Env: DISCOVERY_PORT (11479), DISCOVERY_GROUP6 (ff02::114), STREMIO_PORT (11480), SUBSYNC_PORT (11481), AI_PORT (11482)
 'use strict';
 
 const { execFileSync } = require('child_process');
@@ -18,6 +18,7 @@ const PORT = parseInt(process.env.DISCOVERY_PORT || '11479', 10);
 const GROUP6 = process.env.DISCOVERY_GROUP6 || 'ff02::114';
 const SERVER_PORT = parseInt(process.env.STREMIO_PORT || '11480', 10);
 const SUBSYNC_PORT = parseInt(process.env.SUBSYNC_PORT || '11481', 10);
+const AI_PORT = parseInt(process.env.AI_PORT || '11482', 10);
 const QUERY = 'stremio-lan?';
 const NAME = computerName();
 
@@ -56,7 +57,7 @@ function reachableAddresses() {
 function answer(socket, message, rinfo) {
     // Reply to a query only, straight to the asking TV
     if (message.toString('utf8') !== QUERY) return;
-    const body = JSON.stringify({ service: 'stremio-lan', version: 1, name: NAME, port: SERVER_PORT, subsyncPort: SUBSYNC_PORT, addresses: reachableAddresses() });
+    const body = JSON.stringify({ service: 'stremio-lan', version: 1, name: NAME, port: SERVER_PORT, subsyncPort: SUBSYNC_PORT, aiPort: AI_PORT, addresses: reachableAddresses() });
     socket.send(body, rinfo.port, rinfo.address, (err) => {
         if (err) log('answer failed', rinfo.address, err.message);
     });

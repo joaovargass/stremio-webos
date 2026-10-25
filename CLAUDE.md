@@ -57,6 +57,7 @@ mac/                  # Optional dedicated streaming server for a Mac on the sam
   install.sh          # Installs the patched server, the sync service and launchd agents (idempotent, restarts only changed agents)
   patch-server.py     # Makes server.js listen on STREMIO_PORT
   subsync.js          # Subtitle sync service (ffmpeg audio window + ffsubsync), port 11481
+  airecs.js           # AI recommendation service: a local Ollama model picks daily and weekly rows from the TV's shortlist, port 11482
   discovery.js        # Answers the TV discovery query (UDP 11479, IPv4 broadcast + IPv6 group ff02::114) with ports and addresses
   devmode-keepalive.sh # Resets the 1000 h Dev Mode session daily
 ```
