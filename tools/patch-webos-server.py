@@ -8,7 +8,8 @@ which costs TV CPU and buries the service log. Every new torrent starts a cache 
 several start together, two cleanups delete the same leftover file and the second one logged
 the missing file as an error, although the file being gone is the goal. The player timeline
 needs to show which parts of a file are downloaded and well seeded, which only the engine knows,
-so a /<infohash>/<file>/pieces.json route returns that map.
+so a /<infohash>/<file>/pieces.json route returns that map, and the playback doctor reads from the same route how
+much data follows the playhead without a gap.
 
 Usage: python3 tools/patch-webos-server.py path/to/server.js
 """
@@ -17,19 +18,22 @@ import sys
 
 # Per-file piece map for the player timeline: for each of N equal parts of the file, the share of pieces already
 # downloaded, how many connected peers hold them on average (a wire keeps its peer's pieces as a plain array of
-# booleans), and the ranges the engine is fetching first
+# booleans), and the ranges the engine is fetching first; with a byte position, also the downloaded bytes that
+# follow it without a gap (buckets=0 skips the parts, for a cheap check of the data ahead of the playhead)
 PIECE_MAP = (
-    "function getPieceMap(e,idx,n){"
+    "function getPieceMap(e,idx,n,at){"
     "if(!e||!e.torrent||!e.bitfield||!e.torrent.files[idx])return null;"
     "var file=e.torrent.files[idx],size=e.torrent.pieceLength,"
     "start=file.offset/size|0,end=(file.offset+file.length-1)/size|0,total=end-start+1,"
-    "count=Math.max(1,Math.min(400,parseInt(n,10)||100,total)),wires=e.swarm.wires,parts=[];"
+    'count="0"===n?0:Math.max(1,Math.min(400,parseInt(n,10)||100,total)),wires=e.swarm.wires,parts=[],ahead=null;'
+    'if(null!=at&&""!==at){var pos=file.offset+Math.max(0,Math.min(file.length-1,parseInt(at,10)||0)),p=pos/size|0;'
+    "for(;p<=end&&e.bitfield.get(p);)p++;ahead=Math.max(0,Math.min(file.offset+file.length,p*size)-pos)}"
     "for(var b=0;b<count;b++){"
     "var from=start+Math.floor(b*total/count),to=start+Math.floor((b+1)*total/count)-1,have=0,held=0;"
     "for(var i=from;i<=to;i++){e.bitfield.get(i)&&have++;"
     "for(var w=0;w<wires.length;w++)wires[w].peerPieces[i]&&held++}"
     "var len=to-from+1;parts.push([Math.round(have/len*100)/100,Math.round(held/len*10)/10])}"
-    "return{pieceLength:size,pieces:total,peers:wires.length,downloadSpeed:e.swarm.downloadSpeed(),"
+    "return{pieceLength:size,pieces:total,peers:wires.length,downloadSpeed:e.swarm.downloadSpeed(),ahead:ahead,"
     "parts:parts,selections:e.selection.map((function(s){return[Math.max(0,s.from-start),Math.min(total-1,s.to-start),s.priority]}))}}"
 )
 
@@ -57,7 +61,7 @@ PATCHES = [
         "res.end(JSON.stringify(getStatistics(engines[req.params.infoHash],req.params.idx)))})),"
         'router.get("/:infoHash/:idx/pieces.json",(function(req,res){res.writeHead(200,jsonHead),'
         "res.end(JSON.stringify(getPieceMap(engines[req.params.infoHash],req.params.idx,"
-        "url.parse(req.url,!0).query.buckets)))})),",
+        "url.parse(req.url,!0).query.buckets,url.parse(req.url,!0).query.at)))})),",
     ),
 ]
 
