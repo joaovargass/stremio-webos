@@ -156,7 +156,7 @@ The start-up sync (`syncUser`, then add-ons, library and notifications) dispatch
 
 ### webos-tracks-retry.patch
 
-Longer timeout and retries for the streaming server `/tracks/` call, which lists embedded subtitles and can take 20+ s on a cold torrent.
+Longer timeout and retries for the streaming server `/tracks/` call, which lists embedded subtitles and can take 20+ s on a cold torrent. A timed-out attempt is an info line with its attempt number; only other failures are errors.
 
 ## Deploy
 

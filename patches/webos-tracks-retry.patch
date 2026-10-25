@@ -1,6 +1,6 @@
 --- video.chunk.js
 +++ video.chunk.js
-@@ -17033,9 +17033,12 @@
+@@ -17035,9 +17035,12 @@
              }
          },
          4775: e => {
@@ -15,12 +15,14 @@
                  fetch((window.__STREMIO_SERVER_URL__||"http://127.0.0.1:11470")+"/tracks/" + encodeURIComponent(e), _ctrl ? {signal: _ctrl.signal} : {}).then((function(e) {
                      return e.json()
                  })).then((function(e) {
-@@ -17052,7 +17055,10 @@
+@@ -17054,7 +17057,12 @@
                      })
                  })).catch((function(e) {
                      clearTimeout(_timer);
 -                    console.error("[tracks] fetch failed:", e), t(!1)
-+                    console.error("[tracks] fetch failed:", e);
++                    // A deliberate timeout is expected on a cold torrent and retried; only other failures are errors
++                    if (e && "AbortError" === e.name) console.info("[tracks] The streaming server did not list the tracks in " + Math.round((_cfg.tracksTimeoutMs || 10000) / 1000) + " s (attempt " + _attempt + " of " + (_cfg.tracksRetries || 1) + ")");
++                    else console.error("[tracks] The track list request failed:", e);
 +                    // Torrents can take longer than one timeout to expose their tracks, so retry before giving up
 +                    if (_attempt < (_cfg.tracksRetries || 1)) return setTimeout(function() { _tracks(_url, t, _attempt + 1); }, _cfg.tracksRetryDelayMs || 8000);
 +                    t(!1)
