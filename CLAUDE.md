@@ -110,6 +110,22 @@ Adds an `addtrack` event handler to the WebOsVideo player's `<video>` element. T
 2. **Enriches track labels** from the streaming server's `/tracks/` endpoint when available
 3. **Auto-selects the preferred audio language** from the user's Stremio profile settings (`profile.settings.audioLanguage`)
 
+### fix-search-keyboard-polling.patch and fix-search-keyboard-textinput.patch
+
+The Vidaa build polled the search input every 100 ms (search screen) and 500 ms (text input) and searched on every blur and input event, a workaround for the Vidaa keyboard. On webOS the input events arrive normally, so both patches remove the polling and the extra handlers; Enter or OK still submits.
+
+### use-native-decode-on-direct-url.patch
+
+When the streaming server's media probe fails, the player plays the URL directly instead of forcing a conversion: the TV decodes most files natively, and a probe failure on a cold torrent says nothing about the format. A file the TV then rejects is handled by `webos-retry.js`.
+
+### webos-direct-open.patch
+
+A short OK on a card opens the title (series: its episodes, movie: its sources) through `window.__twkCardPress`; holding OK keeps the card menu.
+
+### webos-own-app-id.patch
+
+Toasts are posted and the streaming service is started under this app's own id (`com.joaovargass.stremiodbg`); webOS denies starting the service of another app.
+
 ### torrent-stall-retry.patch
 
 One-line hook in the WebOsVideo `onerror` handler that lets `window.__stremioStallRetry` (from `webos-retry.js`) take over before the error is shown.
