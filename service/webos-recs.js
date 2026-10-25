@@ -10,6 +10,7 @@
     var MAX_SIMILARITY = 2.2;
     var META_KEY = 'twk.recs.meta';
     var SEEN_KEY = 'twk.recs.seen';
+    var AI_KEY = 'twk.recs.ai';
     var catalogCache = {};
     var metaCache = readJson(META_KEY, {});
     var seen = readJson(SEEN_KEY, {});
@@ -334,7 +335,14 @@
             return Promise.all([candidatePool(profile, types)].concat(types.map(function (type) { return catalog(type, 'top', ''); }))).then(function (lists) {
                 var top10 = {};
                 types.forEach(function (type, i) { top10[type] = lists[i + 1]; });
-                var candidates = candidateRows(profile, lists[0], top10);
+                // The computer's picks join as rows of their own, for this screen's types and without titles already watched
+                var picked = aiRows().map(function (row) {
+                    row.items = row.items.filter(function (entry) { return types.indexOf(entry.meta.type) !== -1 && !profile.watched[entry.meta.id]; });
+                    row.items.forEach(function (entry) { entry.base = score(entry.meta, profile); });
+                    return row;
+                }).filter(function (row) { return row.items.length >= (config.minRowItems || 4); });
+                var candidates = candidateRows(profile, lists[0], top10).concat(picked);
+                refreshAi(profile, lists[0]);
                 // The billboard shows the best titles overall, those with a trailer first, before the rows take their share
                 var picks = (candidates.filter(function (row) { return row.key === 'topPicks'; })[0] || candidates[0] || { items: [] }).items.map(function (entry) { return entry.meta; }).filter(function (meta) { return meta.background; });
                 var billboard = picks.filter(function (meta) { return meta.trailer; }).concat(picks.filter(function (meta) { return !meta.trailer; })).slice(0, config.billboardTitles || 6);
@@ -342,6 +350,69 @@
                 return { screen: screen, billboard: billboard, rows: rows, profile: profile };
             });
         });
+    }
+
+    function aiSlots() {
+        // The current day and week, so each period asks the computer once
+        return { daily: Math.floor(Date.now() / DAY_MS), weekly: Math.floor(Date.now() / (7 * DAY_MS)) };
+    }
+
+    function aiRequest(period, profile, pool) {
+        // The history summary and a personal shortlist the computer's model picks from; nothing outside the list can come back
+        var shortlist = pool.filter(function (meta) { return !profile.watched[meta.id]; }).map(function (meta) { return { meta: meta, value: score(meta, profile) }; })
+            .sort(function (a, b) { return b.value - a.value; }).slice(0, config.aiCandidates || 150).map(function (entry) {
+                var m = entry.meta;
+                return { id: m.id, name: m.name, type: m.type, year: m.year, genres: m.genres, rating: m.rating };
+            });
+        var history = profile.history.filter(function (entry) { return entry.meta && entry.meta.genres.length; }).slice(0, 40).map(function (entry) {
+            return { name: entry.meta.name, type: entry.meta.type, year: entry.meta.year, genres: entry.meta.genres, engagement: engagement(entry.item) };
+        });
+        return JSON.stringify({ period: period, language: window.__twkI18n.language(), model: config.aiModel, history: history, candidates: shortlist });
+    }
+
+    function refreshAi(profile, pool) {
+        // Once per day and per week, ask the computer in the background and take its answer on a later visit
+        if (config.ai === false) return;
+        var cache = readJson(AI_KEY, {});
+        var slots = aiSlots();
+        ['daily', 'weekly'].forEach(function (period) {
+            var entry = cache[period] || {};
+            if (entry.slot === slots[period]) return;
+            fetchJson('/__tweaks/ai?period=' + period).then(function (state) {
+                if (!state || state.status === 'noComputer' || state.status === 'working') return;
+                if (state.status === 'ready' && entry.requested === slots[period]) return keepAi(period, slots[period], state.answer, pool);
+                // A failed job, a restarted service that lost it, or an answer of an earlier period: ask again
+                cache[period] = Object.assign({}, entry, { requested: slots[period] });
+                writeJson(AI_KEY, cache);
+                return fetch('/__tweaks/ai?period=' + period, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: aiRequest(period, profile, pool) });
+            }).catch(function () {});
+        });
+    }
+
+    function keepAi(period, slot, answer, pool) {
+        // Store the rows with the titles themselves, so they still show when the catalogs change or the computer is off
+        var byId = {};
+        pool.forEach(function (meta) { byId[meta.id] = meta; });
+        var cache = readJson(AI_KEY, {});
+        var rows = (answer.rows || []).map(function (row) {
+            return { title: row.title, reason: row.reason, items: row.ids.map(function (id) { return byId[id]; }).filter(Boolean) };
+        }).filter(function (row) { return row.items.length >= (config.minRowItems || 4); });
+        cache[period] = { slot: slot, requested: slot, at: Date.now(), model: answer.model, rows: rows };
+        writeJson(AI_KEY, cache);
+    }
+
+    function aiRows() {
+        // The computer's picks of the last day and week, kept for a week when no computer answers
+        var cache = readJson(AI_KEY, {});
+        var rows = [];
+        ['daily', 'weekly'].forEach(function (period) {
+            var entry = cache[period];
+            if (!entry || !entry.rows || Date.now() - entry.at > 7 * DAY_MS) return;
+            entry.rows.forEach(function (row, i) {
+                rows.push({ key: 'ai:' + period + ':' + i, title: row.title, items: row.items.map(function (meta, j) { return { meta: meta, value: 1 - j / Math.max(1, row.items.length) }; }) });
+            });
+        });
+        return rows;
     }
 
     function quickPage(screen) {

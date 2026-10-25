@@ -225,6 +225,7 @@
             'netflix.addedToList': '{title} added to My List', 'netflix.removedFromList': '{title} removed from My List',
             'settings.netflix': 'Netflix-like screens', 'settings.netflix.enabled': 'Netflix-like Home, Series, Movies and My List',
             'settings.netflix.trailers': 'Play trailers on the billboard', 'settings.netflix.trailerSound': 'Trailers with sound',
+            'settings.recommendations.ai': 'AI picks from the computer (daily and weekly)',
             'genre.Action': 'Action', 'genre.Adventure': 'Adventure', 'genre.Animation': 'Animation', 'genre.Biography': 'Biographies',
             'genre.Comedy': 'Comedy', 'genre.Crime': 'Crime', 'genre.Documentary': 'Documentaries', 'genre.Drama': 'Drama',
             'genre.Family': 'Family', 'genre.Fantasy': 'Fantasy', 'genre.Game-Show': 'Competitions', 'genre.History': 'History',
@@ -457,6 +458,7 @@
             'netflix.addedToList': '{title} adicionado à Minha lista', 'netflix.removedFromList': '{title} removido da Minha lista',
             'settings.netflix': 'Telas estilo Netflix', 'settings.netflix.enabled': 'Início, Séries, Filmes e Minha lista estilo Netflix',
             'settings.netflix.trailers': 'Tocar trailers no destaque', 'settings.netflix.trailerSound': 'Trailers com som',
+            'settings.recommendations.ai': 'Escolhas de IA do computador (diárias e semanais)',
             'genre.Action': 'Ação', 'genre.Adventure': 'Aventura', 'genre.Animation': 'Animação', 'genre.Biography': 'Biografias',
             'genre.Comedy': 'Comédia', 'genre.Crime': 'Crime', 'genre.Documentary': 'Documentários', 'genre.Drama': 'Drama',
             'genre.Family': 'Família', 'genre.Fantasy': 'Fantasia', 'genre.Game-Show': 'Competição', 'genre.History': 'História',
@@ -506,6 +508,6 @@
         }
     }
 
-    window.__twkI18n = { t: text, number: number, refresh: refresh };
+    window.__twkI18n = { t: text, number: number, refresh: refresh, language: function () { return locale; } };
     refresh();
 })();

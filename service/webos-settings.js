@@ -18,7 +18,8 @@
         { title: 'settings.netflix', column: 0, items: [
             ['netflix.enabled'],
             ['netflix.trailers'],
-            ['netflix.trailerSound']
+            ['netflix.trailerSound'],
+            ['recommendations.ai']
         ] },
         { title: 'settings.simple', column: 0, items: [
             ['simple.enabled'],

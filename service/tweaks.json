@@ -314,7 +314,6 @@
         "metaSettleMs": 200
     },
     "recommendations": {
-        "enabled": true,
         "cinemetaUrl": "https://v3-cinemeta.strem.io",
         "requestTimeoutMs": 8000,
         "catalogTtlMs": 21600000,
@@ -334,8 +333,13 @@
         "rowOverlapPenalty": 1,
         "top10Boost": 0.2,
         "rowWeights": {
-            "watchAgain": 0.5
+            "watchAgain": 0.5,
+            "ai": 1.2
         },
+        "ai": true,
+        "aiModel": "gemma4:12b",
+        "aiCandidates": 100,
+        "aiTimeoutMs": 300000,
         "billboardTitles": 6,
         "fatigueAfter": 6,
         "weights": {
