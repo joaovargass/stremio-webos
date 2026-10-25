@@ -171,7 +171,7 @@
         var native = window.__stremioNativeLang || null;
         // The player reads its state many times a second; the same tracks in the same context reuse the last order
         var stream = (state.selected && state.selected.stream) || {};
-        var signature = [key, (stream.behaviorHints || {}).filename, simple.enabled, native, profile.subs.join(','), t('subtitle.label.synced'), extraCache[key] ? extraCache[key].length : 'pending', state.subtitles.map(function (track) { return track && track.url; }).join(',')].join('|');
+        var signature = [key, (stream.behaviorHints || {}).filename, simple.enabled, native, profile.subs.join(','), t('subtitle.label.synced'), extraCache[key] ? extraCache[key].length : 'pending', state.subtitles.concat(stream.subtitles || []).map(function (track) { return track && track.url; }).join(',')].join('|');
         if (signature !== ordered.signature) ordered = { key: key, signature: signature, subtitles: orderTracks(state, key, native) };
         var selected = state.selected;
         // Subtitles that come with the stream itself go through the converter as well
@@ -182,9 +182,13 @@
     }
 
     function orderTracks(state, key, native) {
-        // Merge the addon and OpenSubtitles tracks, drop errors and duplicates, and order them by language then sync likelihood
+        // Merge the addon, stream and OpenSubtitles tracks, drop errors and duplicates, and order them by language then sync likelihood
         var seen = {};
-        var merged = state.subtitles.concat(extraCache[key] || []).filter(function (track) {
+        // Subtitles a source carries inside its stream entry only reach the menu through this list
+        var inStream = ((state.selected && state.selected.stream && state.selected.stream.subtitles) || []).map(function (track, i) {
+            return Object.assign({ id: 'tweaks-stream-' + i, origin: t('subtitle.origin.stream') }, track);
+        });
+        var merged = state.subtitles.concat(inStream, extraCache[key] || []).filter(function (track) {
             if (!track || !track.url || isError(track) || seen[track.url]) return false;
             seen[track.url] = true;
             return true;
