@@ -39,6 +39,7 @@ var mirrorChecks = {};
 var subtitleCache = [];
 var syncQueue = Promise.resolve();
 var syncResults = {};
+var aiJobs = {};
 var ownServer = false;
 var hlsSessions = {};
 var lastScan = 0;
@@ -670,7 +671,7 @@ function adoptAnswers(answers, discover) {
         var settle = function() {
             if (results.indexOf(null) !== -1) return;
             var best = urls.filter(function(u, i) { return results[i]; })[0];
-            if (best) adoptServer(best, { subsyncPort: answer.body.subsyncPort, name: answer.body.name });
+            if (best) adoptServer(best, { subsyncPort: answer.body.subsyncPort, aiPort: answer.body.aiPort, name: answer.body.name });
         };
         urls.forEach(function(candidate, i) {
             probe(candidate, function(ok) {
@@ -1003,6 +1004,50 @@ function subsyncServer(source) {
     return url.parse('http://' + urlHost(transcoder.hostname) + ':' + (info.subsyncPort || tweaks.servers.subsyncPort) + '/');
 }
 
+function aiServer() {
+    // The AI recommendation service of the first computer that answers, on the port it announced
+    var computer = remoteFallback();
+    var info = computer ? serverInfo[computer] || {} : {};
+    return computer && info.aiPort ? url.parse('http://' + urlHost(url.parse(computer).hostname) + ':' + info.aiPort + '/recommend') : null;
+}
+
+function startAiJob(period, body) {
+    // Ask the computer in the background and keep its answer; a model can take minutes, which no page request should wait for
+    var target = aiServer();
+    if (!target) return false;
+    var job = aiJobs[period] = { status: 'working', at: Date.now() };
+    var req = http.request({ hostname: target.hostname, port: target.port, path: target.path, method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } }, function(res) {
+        var parts = [];
+        res.on('data', function(part) { parts.push(part); });
+        res.on('end', function() {
+            var answer = null;
+            try { answer = JSON.parse(Buffer.concat(parts).toString('utf8')); } catch (_) {}
+            job.status = res.statusCode === 200 && answer && answer.rows ? 'ready' : 'failed';
+            job.answer = job.status === 'ready' ? answer : null;
+            console.log('[recommendations] ' + (job.status === 'ready' ? 'The computer picked ' + answer.rows.length + ' ' + period + ' rows with ' + answer.model + ' in ' + Math.round((Date.now() - job.at) / 1000) + ' s' : 'The computer could not pick ' + period + ' rows (HTTP ' + res.statusCode + ')'));
+        });
+    });
+    req.setTimeout((tweaks.recommendations || {}).aiTimeoutMs || 300000, function() { req.destroy(new Error('no answer in time')); });
+    req.on('error', function(err) {
+        job.status = 'failed';
+        console.warn('[recommendations] The computer could not pick ' + period + ' rows: ' + err.message);
+    });
+    req.end(body);
+    return true;
+}
+
+function serveAi(req, res) {
+    // POST starts a daily or weekly job on the computer, GET reads its state and answer
+    var period = url.parse(req.url, true).query.period === 'weekly' ? 'weekly' : 'daily';
+    if (req.method === 'GET') return answerJson(res, 200, aiJobs[period] || { status: aiServer() ? 'none' : 'noComputer' });
+    var chunks = [];
+    req.on('data', function(chunk) { chunks.push(chunk); });
+    req.on('end', function() {
+        if ((aiJobs[period] || {}).status === 'working') return answerJson(res, 202, aiJobs[period]);
+        answerJson(res, startAiJob(period, Buffer.concat(chunks).toString('utf8')) ? 202 : 503, aiJobs[period] || { status: 'noComputer' });
+    });
+}
+
 function answerJson(res, status, body) {
     // JSON answer for the page
     res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -1107,6 +1152,7 @@ http.createServer(function(req, res) {
     if (urlPath === '/device-info' && isLocal(sourceFor(req.url))) return serveDeviceInfo(res);
     if (urlPath === '/subtitles.vtt' && (tweaks.subtitles || {}).convert !== false) return serveSubtitles(req, res);
     if (urlPath === '/__tweaks/subsync') return serveSubsync(req, res);
+    if (urlPath === '/__tweaks/ai') return serveAi(req, res);
     if (urlPath === '/__tweaks/overrides' && req.method === 'POST') return serveOverrides(req, res);
     serveStatic(urlPath, res, function() { proxyToStreaming(req, res); });
 }).listen(proxyUrl.port, proxyUrl.hostname, function() {
