@@ -1,0 +1,32 @@
+--- video.chunk.js
++++ video.chunk.js
+@@ -21331,10 +21331,19 @@
+                     O[e] && I.emit("propChanged", e, N(e))
+                 }
+ 
++                function _twkPlay(v) {
++                    // play() rejects while a starving torrent has no data yet; the element's error handler already deals with that
++                    var p = v.play();
++                    p && p.catch && p.catch(function(e) {
++                        if (e && ("NotSupportedError" === e.name || "AbortError" === e.name)) return console.info("[player] play waits for data the source has not delivered yet");
++                        console.warn("[player] the TV refused to play:", e && e.name, e && e.message);
++                    });
++                }
++
+                 function V(e, t) {
+                     switch (e) {
+                         case "paused":
+-                            null !== D && (t ? A.pause() : A.play());
++                            null !== D && (t ? A.pause() : _twkPlay(A));
+                             break;
+                         case "time":
+                             if (null !== D && A.readyState >= A.HAVE_METADATA && null !== t && isFinite(t)) try {
+@@ -21503,7 +21512,7 @@
+                                         A.load()
+                                     } catch (e) {}
+                                     try {
+-                                        A.play()
++                                        _twkPlay(A)
+                                     } catch (e) {}
+                                 }, a = setInterval((function() {
+                                     if (A.mediaId) return clearInterval(a), F(), g(), void i();

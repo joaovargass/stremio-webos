@@ -118,6 +118,10 @@ One-line hook in the WebOsVideo `onerror` handler that lets `window.__stremioSta
 
 Removes the automatic hand-off to the LG media player (`com.webos.app.photovideo`) on decode/format errors, so playback always stays inside Stremio.
 
+### webos-play-rejection.patch
+
+The WebOsVideo player called `play()` on load and on resume without handling its promise, so a torrent with no data yet showed as an uncaught page error ("Failed to load because no supported source was found") although the element's error handler already recovers. Both calls now handle the rejection: no data yet (`NotSupportedError`, `AbortError`) is an info line, any other refusal a warning.
+
 ### webos-player-buttons.patch
 
 Adds two buttons to the player control bar: `skip-forward` opens the source picker, `network` toggles the diagnostics panel.
