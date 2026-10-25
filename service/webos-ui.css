@@ -531,6 +531,34 @@ html[data-twk-top="logview"] .twk-panel.twk-visible:not(.twk-logview) {
     width: 0;
 }
 
+/* While rows wait below the screen edge, a fade with an arrow stays pinned at the bottom of the panel; it shares the columns' grid row, since a sticky item cannot leave its own row */
+.twk-settings::after {
+    content: '';
+    grid-row: 2;
+    grid-column: 1 / -1;
+    align-self: end;
+    z-index: 1;
+    position: sticky;
+    bottom: 0;
+    height: var(--twk-space-xl);
+    pointer-events: none;
+}
+
+.twk-settings > div:nth-child(2) {
+    grid-area: 2 / 1;
+}
+
+.twk-settings > div:nth-child(3) {
+    grid-area: 2 / 2;
+}
+
+.twk-settings.twk-more-below::after {
+    content: '▾';
+    text-align: center;
+    color: var(--twk-text-soft);
+    background: linear-gradient(transparent, var(--twk-surface-solid) 70%);
+}
+
 .twk-settings .twk-item {
     padding: var(--twk-space-s) var(--twk-inset-xs);
 }

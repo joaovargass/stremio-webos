@@ -107,6 +107,13 @@
                 group.items.forEach(function (item) { addRow(box, item, column); });
             });
         });
+        view.root.addEventListener('scroll', markMore);
+    }
+
+    function markMore() {
+        // A fade with an arrow at the bottom tells the viewer more rows wait below the screen edge
+        var root = view.root;
+        root.classList.toggle('twk-more-below', root.scrollTop + root.clientHeight < root.scrollHeight - 2);
     }
 
     function addRow(box, item, column) {
@@ -154,6 +161,14 @@
         var from = rows.filter(function (r) { return r.column === current.column; }).indexOf(current);
         var target = rows.filter(function (r) { return r.column === column; });
         return rows.indexOf(target[Math.min(from, target.length - 1)]);
+    }
+
+    function sameColumn(step) {
+        // Up and Down stay inside the focused column and stop at its ends, as the two columns look on screen
+        var current = rows[focus];
+        var column = rows.filter(function (r) { return r.column === current.column; });
+        var next = column[Math.max(0, Math.min(column.length - 1, column.indexOf(current) + step))];
+        return rows.indexOf(next);
     }
 
     function toggleFocused() {
@@ -211,6 +226,8 @@
             open = true;
             paint();
             view.show();
+            // The panel has its size only once it is on screen
+            requestAnimationFrame(markMore);
         });
     }
 
@@ -247,8 +264,7 @@
         if ([KEYS.up, KEYS.down, KEYS.left, KEYS.right, KEYS.enter, KEYS.back, KEYS.escape, config.hotkey].indexOf(code) === -1) return;
         e.preventDefault();
         e.stopPropagation();
-        if (code === KEYS.up) focus = Math.max(0, focus - 1);
-        else if (code === KEYS.down) focus = Math.min(rows.length - 1, focus + 1);
+        if (code === KEYS.up || code === KEYS.down) focus = sameColumn(code === KEYS.down ? 1 : -1);
         else if (code === KEYS.left || code === KEYS.right) focus = otherColumn(code === KEYS.right ? 1 : 0);
         else if (code === KEYS.enter) return toggleFocused();
         else return hide();
