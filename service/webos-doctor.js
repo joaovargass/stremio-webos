@@ -41,7 +41,8 @@
     var probeQueue = [];
     var probing = false;
     var pendingResume = null;
-    var rates = { tv: { key: 'twk.tvRate', savedAt: 0 }, lan: { key: 'twk.lanRate', savedAt: 0 } };
+    var aheadProbe = null;
+    var rates ={ tv: { key: 'twk.tvRate', savedAt: 0 }, lan: { key: 'twk.lanRate', savedAt: 0 } };
     rates.tv.value = shared.savedRate(rates.tv.key);
     rates.lan.value = shared.savedRate(rates.lan.key);
     var learned = rates.tv.value;
@@ -500,7 +501,14 @@
         state.reason = reason + '|' + (state.blocked[currentVideoId()] || 'noSwitch');
     }
 
-    function evaluate(video, stats, proxy, hash) {
+    function serverAhead(video, stats, needed, map) {
+        // Seconds of data that follow the playhead without a gap on the server; the file progress counts parts anywhere in the file
+        if (map && typeof map.ahead === 'number') return map.ahead / needed;
+        // A server without the piece map (a computer running the desktop build) only gives the whole-file share
+        return (stats.streamProgress || 0) * video.duration - video.currentTime;
+    }
+
+    function evaluate(video, stats, proxy, hash, map) {
         // Turn the raw numbers into a status, a reason and possibly an automatic fix
         var now = Date.now();
         var needed = stats && stats.streamLen && video.duration ? stats.streamLen / video.duration : 0;
@@ -546,8 +554,10 @@
         stalledSince = playing && !loading && !video.seeking && !advancing && video.readyState < 3 ? stalledSince || now : null;
         var choppy = isChoppy(video, now, playing && !loading && !video.seeking);
         // Data the server already holds past the playhead counts as buffer: a finished file never downloads, yet is not slow
-        var serverAheadS = stats && stats.streamLen && video.duration ? (stats.streamProgress || 0) * video.duration - video.currentTime : 0;
+        var serverAheadS = stats && needed > 0 ? serverAhead(video, stats, needed, map) : 0;
         state.serverAheadS = Math.max(0, serverAheadS);
+        // The exact data ahead is read on the next tick only while it decides something: a download under the bitrate or a frozen picture
+        aheadProbe = hash && needed > 0 && (speed < needed * 0.9 || stalledSince) ? { hash: hash, len: stats.streamLen } : null;
         var slow = !!stats && needed > 0 && speed < needed * 0.9 && serverAheadS < (config.targetBufferS || 120);
         var low = state.totalBufferS < (config.minBufferS || 10);
         describe(slow, low, needed, !!hash);
@@ -652,15 +662,18 @@
         var torrent = shared.sourceTorrent(src);
         // The playing torrent file is measured with the same evidence as the candidates it is compared with
         lastCurrent = torrent ? { infoHash: torrent[2].toLowerCase(), fileIdx: parseInt(torrent[3], 10) } : null;
+        // The byte under the playhead, at the file's average bitrate, for the data-ahead check the last evaluation asked for
+        var probe = torrent && aheadProbe && aheadProbe.hash === lastCurrent.infoHash && video.duration ? Math.floor(video.currentTime / video.duration * aheadProbe.len) : -1;
         busy = true;
         Promise.all([
             torrent ? fetchJson(torrent[1] + '/' + torrent[2] + '/' + torrent[3] + '/stats.json') : null,
             fetchJson('/__tweaks/status'),
-            sampleRace()
+            sampleRace(),
+            probe >= 0 ? fetchJson(torrent[1] + '/' + torrent[2] + '/' + torrent[3] + '/pieces.json?buckets=0&at=' + probe) : null
         ]).then(function (results) {
             busy = false;
             if (lastCurrent) window.__twkEvidence.note(lastCurrent, results[0]);
-            evaluate(video, results[0], results[1], torrent ? torrent[2].toLowerCase() : null);
+            evaluate(video, results[0], results[1], torrent ? torrent[2].toLowerCase() : null, results[3]);
         });
     }
 
