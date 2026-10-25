@@ -15,7 +15,8 @@
         series: 'M3 6h18v11H3zm2 2v7h14V8zm3 11h8v2H8z',
         movie: 'M4 4h2l2 3h3L9 4h2l2 3h3l-2-3h2l2 3h2V4h2v16H2V4zm0 5v9h16V9z',
         mylist: 'M11 4h2v7h7v2h-7v7h-2v-7H4v-2h7z',
-        settings: 'M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8zm8.6 3l1.4-1-2-3.5-1.7.6a7 7 0 0 0-1.6-.9L16.5 4h-4l-.3 1.8a7 7 0 0 0-1.6.9l-1.7-.6-2 3.5 1.4 1a7 7 0 0 0 0 1.8l-1.4 1 2 3.5 1.7-.6a7 7 0 0 0 1.6.9l.3 1.8h4l.3-1.8a7 7 0 0 0 1.6-.9l1.7.6 2-3.5-1.4-1a7 7 0 0 0 0-1.8z'
+        settings: 'M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8zm8.6 3l1.4-1-2-3.5-1.7.6a7 7 0 0 0-1.6-.9L16.5 4h-4l-.3 1.8a7 7 0 0 0-1.6.9l-1.7-.6-2 3.5 1.4 1a7 7 0 0 0 0 1.8l-1.4 1 2 3.5 1.7-.6a7 7 0 0 0 1.6.9l.3 1.8h4l.3-1.8a7 7 0 0 0 1.6-.9l1.7.6 2-3.5-1.4-1a7 7 0 0 0 0-1.8z',
+        tweaks: 'M4 6h10v2H4zm12-1h2v4h-2zm-12 6h4v2H4zm6-1h2v4h-2zm4 1h6v2h-6zM4 16h10v2H4zm12-1h2v4h-2z'
     };
     var MENU = [
         { id: 'search', route: '/search' },
@@ -23,7 +24,8 @@
         { id: 'series', route: '/discover/series' },
         { id: 'movie', route: '/discover/movie' },
         { id: 'mylist', route: '/library' },
-        { id: 'settings', route: '/settings' }
+        { id: 'settings', route: '/settings' },
+        { id: 'tweaks', panel: true }
     ];
     var root = null;
     var menu = null;
@@ -103,6 +105,8 @@
         // Go to the screen of a menu item through the app router, so Back keeps working
         var item = MENU[index];
         setMenuOpen(false);
+        // The tweak settings are a panel over the current screen, the same one the yellow key opens
+        if (item.panel) return window.__stremioSettings && window.__stremioSettings.toggle();
         if (screen && item.id === screen.name) return;
         window.__stremioDoctor.navigate(item.route);
     }
